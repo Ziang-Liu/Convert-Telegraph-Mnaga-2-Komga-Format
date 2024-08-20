@@ -47,7 +47,7 @@ class Telegraph:
 
         # generated path
         self.manga_path = self._temp_folder
-        self.epub_file_path = self._temp_folder
+        self._epub_file_path = self._temp_folder
         self._zip_file_path = self._temp_folder
         self._download_path = self._temp_folder
 
@@ -85,9 +85,9 @@ class Telegraph:
                 await asyncio.gather(*tasks)
 
         self._zip_file_path = os.path.join(self.manga_path, self.title + '.zip')
-        self.epub_file_path = os.path.join(self.manga_path, self.title + '.epub')
+        self._epub_file_path = os.path.join(self.manga_path, self.title + '.epub')
 
-        if os.path.exists(self._zip_file_path) or os.path.exists(self.epub_file_path):
+        if os.path.exists(self._zip_file_path) or os.path.exists(self._epub_file_path):
             logger.info(f"[Telegraph]: Skip existed file '{self.title}'")
             return "EXIST"
 
@@ -206,8 +206,13 @@ class Telegraph:
         await check_integrity()
         await create_zip() if is_zip else await create_epub()
 
-    async def get_epub(self):
-        return await self._process_handler(is_epub = True)
+    async def get_epub(self) -> str:
+        """Successfully get epub, return file path, else raise exception"""
+        try:
+            await self._process_handler(is_epub = True)
+            return self._epub_file_path
+        except Exception as exc:
+            raise exc
 
     async def get_zip(self):
         return await self._process_handler(is_zip = True)

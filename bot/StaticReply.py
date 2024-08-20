@@ -3,9 +3,9 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 
 async def introduce(update: Update, _):
     await update.message.reply_markdown(
-        f"Heart heart heart, {update.message.from_user.full_name}\n\n"
-        f"这里是 Neko Chan (=^‥^=)，一个自托管的”高性能“机器人，拥有许多实用的功能哦（TLDR）。"
-        f"想了解详细信息使用 /help 来获取命令列表与功能介绍喵~\n\n"
+        f"Nyacome!, {update.message.from_user.full_name}\n\n"
+        f"这里是 Neko Chan (=^‥^=)，一个自托管的拥有许多实用的功能的~~高性能~~机器人。"
+        f"想了解详细信息可以使用 /help 来获取命令列表与功能介绍\n"
         f"如果你喜欢这个[项目](https://github.com/Ziang-Liu/Neko-Chan), 不妨给它点个 star ฅ(＾・ω・＾ฅ)。"
     )
 

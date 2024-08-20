@@ -1,5 +1,4 @@
 import asyncio
-import os
 import re
 from typing import Optional
 
@@ -29,65 +28,63 @@ from src import (
 
 
 class PandoraBox:
-    def __init__(self, proxy: Optional[Proxy] = None, cf_proxy: Optional[str] = None) -> None:
+    def __init__(self, proxy: Optional[Proxy] = None, cf_proxy: Optional[str] = None):
         self._proxy = proxy
         self._cf_proxy = cf_proxy
         self._headers = {'User-Agent': UserAgent().random}
 
     async def auto_parse_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        async def send_epub(url) -> None:
-            telegraph = Telegraph(url, self._proxy, self._cf_proxy)
-            await telegraph.get_epub()
-
-            if not os.path.exists(telegraph.epub_file_path):
-                await update.message.reply_text(text = "oops,下载好像出错了XwX，过会再试试吧")
-                return
-
-            await update.message.reply_document(
-                document = telegraph.epub_file_path,
-                connect_timeout = 30., write_timeout = 30., pool_timeout = 30., read_timeout = 30.
-            )
+        async def send_epub(url):
+            try:
+                telegraph_task = Telegraph(url, self._proxy, self._cf_proxy)
+                await update.message.reply_document(
+                    document = await telegraph_task.get_epub(),
+                    connect_timeout = 30., write_timeout = 30., pool_timeout = 30., read_timeout = 30.
+                )
+            except Exception as exc:
+                await update.message.reply_text(text = f"出错了: {exc}")
 
         async def search_and_reply(url):
-            _search = AggregationSearch(proxy = self._proxy, cf_proxy = self._cf_proxy)
-            result = await _search.aggregation_search(url)
+            search_task = AggregationSearch(proxy = self._proxy, cf_proxy = self._cf_proxy)
+            search_result = await search_task.aggregation_search(url)
 
-            if len(_search.exception) == 2:
-                err_message = ''.join([f'{e}\n' for e in _search.exception])
+            if len(search_task.exception) == 2:
+                err_message = ''.join([f'{e}\n' for e in search_task.exception])
                 await update.message.reply_text(err_message)
                 return ConversationHandler.END
 
-            if not result:
+            if not search_result:
                 await update.message.reply_text("没有发现准确搜索结果😿")
                 return ConversationHandler.END
 
-            _message = f"[🖼️]({result['url']}) Gacha (>ワ<) [😼]({result['thumbnail']})"
-            _buttons = None
+            search_reply_message = f"[🖼️]({search_result['url']}) Gacha (>ワ<) [😼]({search_result['thumbnail']})"
 
-            if result["class"] == "iqdb":
-                search_similarity = result['similarity']
-                search_source = result['source']
-                _buttons = [
-                    [InlineKeyboardButton(f"{search_source}: {search_similarity}% Match", url = result['url'])]
+            if search_result["class"] == "iqdb":
+                search_reply_integrated_buttons = [
+                    [InlineKeyboardButton(
+                        f"{search_result['source']}: {search_result['similarity']}% Match",
+                        url = search_result['url'])]
                 ]
+                await update.message.reply_markdown(
+                    search_reply_message, reply_markup = InlineKeyboardMarkup(search_reply_integrated_buttons)
+                )
 
-            elif result["class"] == "ascii2d":
-                search_author = result['author']
-                search_author_url = result['author_url']
-                _buttons = [
-                    [InlineKeyboardButton("Original", url = result['url'])],
-                    [InlineKeyboardButton(f"{search_author}", url = search_author_url)]
+            elif search_result["class"] == "ascii2d":
+                search_reply_integrated_buttons = [
+                    [InlineKeyboardButton("Original", url = search_result['url'])],
+                    [InlineKeyboardButton(f"{search_result['author']}", url = search_result['author_url'])]
                 ]
+                await update.message.reply_markdown(
+                    search_reply_message, reply_markup = InlineKeyboardMarkup(search_reply_integrated_buttons)
+                )
 
-            _reply_markup = InlineKeyboardMarkup(_buttons)
-            await update.message.reply_markdown(_message, reply_markup = _reply_markup)
-
+        # start from here
         link_preview = update.message.reply_to_message.link_preview_options
         attachment = update.message.reply_to_message.effective_attachment
 
         if link_preview:
             if re.search(r'booru|x|twitter|pixiv|ascii2d|saucenao', link_preview.url):
-                await update.message.reply_text("唔...用答案搜索答案？")
+                await update.message.reply_text("这...这不用来找我吧()")
                 return ConversationHandler.END
             elif re.search(r'telegra.ph', link_preview.url):
                 await send_epub(link_preview.url)
@@ -103,16 +100,10 @@ class PandoraBox:
             return ConversationHandler.END
 
         if filters.Sticker.ALL.filter(update.message.reply_to_message):
-            sticker_url = (await context.bot.get_file(attachment.file_id)).file_path
-            get_sticker = AggregationSearch(proxy = self._proxy)
-            await get_sticker.get_media(sticker_url)
-
-            if attachment.is_video:
-                filename = attachment.file_unique_id + '.webm'
-                await update.message.reply_document(get_sticker.media, filename = filename)
-            else:
-                await update.message.reply_photo(photo = get_sticker.media)
-
+            sticker_task = AggregationSearch(proxy = self._proxy, cf_proxy = self._cf_proxy)
+            await sticker_task.get_media((await context.bot.get_file(attachment.file_id)).file_path)
+            await update.message.reply_document(sticker_task.media, filename = f"{attachment.file_unique_id}.webm") \
+                if attachment.is_video else await update.message.reply_photo(photo = sticker_task.media)
             return ConversationHandler.END
 
         if filters.Document.IMAGE.filter(update.message.reply_to_message):
@@ -120,34 +111,35 @@ class PandoraBox:
             await search_and_reply(file_link)
             return ConversationHandler.END
 
-        await update.message.reply_text("这是什么 OwO")
+        await update.message.reply_text("Unsupported type()")
         return ConversationHandler.END
 
     async def anime_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         async def search_and_reply(url):
             def format_time(seconds):
-                minutes = int(seconds) // 60
-                remaining_seconds = int(seconds) % 60
-                return f"{minutes}m {remaining_seconds}s"
+                return f"{int(seconds) // 60}m {int(seconds) % 60}s"
 
-            _search = TraceMoeApi(proxy = self._proxy)
-            result = (await _search.search_by_url(url))[0]
-            if not result['similarity'] <= 90.:
+            anime_search_task = TraceMoeApi(proxy = self._proxy, cf_proxy = self._cf_proxy)
+            anime_search_result = (await anime_search_task.search_by_url(url))[0]
+            if not anime_search_result['similarity'] <= 90.:
                 await update.message.reply_text("没有发现搜索结果 XwX")
                 return ConversationHandler.END
 
-            _anilist = f"https://anilist.co/anime/{result['anilist']}"
-            _buttons = [
-                [InlineKeyboardButton("AniList", url = _anilist)],
-                [InlineKeyboardButton("Image Preview", url = result['image'])],
-                [InlineKeyboardButton("Video Preview", url = result['video'])],
+            anilist_url = f"https://anilist.co/anime/{anime_search_result['anilist']}"
+            search_buttons = [
+                [InlineKeyboardButton("AniList", url = anilist_url)],
+                [InlineKeyboardButton("Image Preview", url = anime_search_result['image'])],
+                [InlineKeyboardButton("Video Preview", url = anime_search_result['video'])],
             ]
-            _message = (f"[🔎]({_anilist}) 搜索结果:\n"
-                        f"时间线: `{format_time(float(result['from']))}` - "
-                        f"`{format_time(float(result['to']))}`\n"
-                        f"剧集: `{result['episode']}`")
-            await update.message.reply_markdown(_message, reply_markup = InlineKeyboardMarkup(_buttons))
+            search_reply_text = (
+                f"[🔎]({anilist_url}) 搜索结果:\n"
+                f"时间线: `{format_time(float(anime_search_result['from']))}` - "
+                f"`{format_time(float(anime_search_result['to']))}`\n"
+                f"剧集: `{anime_search_result['episode']}`"
+            )
+            await update.message.reply_markdown(search_reply_text, reply_markup = InlineKeyboardMarkup(search_buttons))
 
+        # start from here
         link_preview = update.message.reply_to_message.link_preview_options
         attachment = update.message.reply_to_message.effective_attachment
 
@@ -165,7 +157,7 @@ class PandoraBox:
             await search_and_reply(file_link)
             return ConversationHandler.END
 
-        await update.message.reply_text("Unsupported type XwX")
+        await update.message.reply_text("Unsupported type()")
         return ConversationHandler.END
 
 
