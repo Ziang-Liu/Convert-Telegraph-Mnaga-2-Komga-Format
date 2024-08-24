@@ -3,7 +3,7 @@ from typing import Dict, Optional, List
 
 from PicImageSearch import Ascii2D, Iqdb, Google
 from PicImageSearch import Network
-from PicImageSearch.model import Ascii2DResponse, IqdbResponse, IqdbItem, GoogleResponse
+from PicImageSearch.model import Ascii2DResponse, IqdbResponse, GoogleResponse
 from fake_useragent import UserAgent
 from httpx import Proxy
 from httpx import URL, AsyncClient
@@ -24,6 +24,7 @@ class AggregationSearch:
     def __init__(self, proxy: Optional[Proxy] = None, cf_proxy: Optional[str] = None):
         self._proxy = proxy
         self._cf_proxy = cf_proxy
+
         self._ascii2d: List = []
         self._ascii2d_bovw: List = []
 
@@ -48,27 +49,25 @@ class AggregationSearch:
 
     async def _search_with_type(self, url: str, type: str):
         async with Network(proxies = self._proxy) as client:
-            await self.get_media(url) if not self.media else None
-
             if type == "ascii2d":
                 base_url = f'{self._cf_proxy}/https://ascii2d.net' if self._cf_proxy else 'https://ascii2d.net'
-                search = Ascii2D(base_url = base_url, client = client)
-                resp = await Ascii2D.search(search, file = self.media)
-                if not resp.raw:
+                ascii2d = Ascii2D(base_url = base_url, client = client)
+                ascii2d_bovw = Ascii2D(base_url = base_url, client = client, bovw = True)
+
+                resp = await ascii2d.search(url = url)
+                bovw_resp = await ascii2d_bovw.search(url = url)
+                if not resp.raw and not bovw_resp.raw:
                     raise Exception(f"No ascii2d search results, search url: {resp.url}")
 
-                resp_text, resp_url, _ = await search.get(resp.url.replace("/color/", "/bovw/"))
-                bovw_resp = Ascii2DResponse(resp_text, resp_url)
-
-                tasks = [self._format_ascii2d_result(bovw_resp, True),
-                         self._format_ascii2d_result(resp)]
+                tasks = [self._format_ascii2d_result(bovw_resp, bovw = True), self._format_ascii2d_result(resp)]
                 await asyncio.gather(*tasks)
 
             if type == "iqdb":
                 base_url = f'{self._cf_proxy}/https://iqdb.org' if self._cf_proxy else 'https://iqdb.org'
                 base_url_3d = f'{self._cf_proxy}/https://3d.iqdb.org' if self._cf_proxy else 'https://3d.iqdb.org'
-                search = Iqdb(base_url = base_url, base_url_3d = base_url_3d, client = client)
-                resp = await Iqdb.search(search, file = self.media)
+                iqdb = Iqdb(base_url = base_url, base_url_3d = base_url_3d, client = client)
+
+                resp = await iqdb.search(url = url)
                 if not resp.raw:
                     raise Exception(f"No iqdb search results, search url: {resp.url}")
 
@@ -76,8 +75,9 @@ class AggregationSearch:
 
             if type == "google":
                 base_url = f'{self._cf_proxy}/https://google.com' if self._cf_proxy else 'https://google.com'
-                search = Google(base_url = base_url, client = client)
-                resp = await Google.search(search, file = self.media)
+                google = Google(base_url = base_url, client = client)
+
+                resp = await google.search(url = url)
                 if not resp.raw:
                     raise Exception(f"No google search results, search url: {resp.url}")
 
@@ -89,35 +89,35 @@ class AggregationSearch:
         self.google_result["url"] = resp.raw[2].url
 
     async def _format_iqdb_result(self, resp: IqdbResponse):
-        selected_res: IqdbItem = resp.raw[0]
-        danbooru_res: List[IqdbItem] = [i for i in resp.raw if i.source == "Danbooru"]
-        yandere_res: List[IqdbItem] = [i for i in resp.raw if i.source == "yande.re"]
+        selected_res = resp.raw[0]
+        danbooru_res = [i for i in resp.raw if i.source == "Danbooru"]
+        yandere_res = [i for i in resp.raw if i.source == "yande.re"]
 
-        if danbooru_res:
-            selected_res = danbooru_res[0]
-        elif yandere_res:
-            selected_res = yandere_res[0]
+        selected_res = danbooru_res[0] if danbooru_res else yandere_res[0] if yandere_res else selected_res
 
-        if selected_res.similarity < 85.0:
-            return
-
-        self.iqdb_result["class"] = "iqdb"
-        self.iqdb_result["url"] = selected_res.url
-        self.iqdb_result["similarity"] = selected_res.similarity
-        self.iqdb_result["thumbnail"] = selected_res.thumbnail
-        self.iqdb_result["content"] = selected_res.content
-        self.iqdb_result["source"] = selected_res.source
+        if selected_res.similarity >= 85.0:
+            self.iqdb_result = {
+                "class": "iqdb",
+                "url": selected_res.url,
+                "similarity": selected_res.similarity,
+                "thumbnail": selected_res.thumbnail,
+                "content": selected_res.content,
+                "source": selected_res.source
+            }
 
     async def _format_ascii2d_result(self, resp: Ascii2DResponse, bovw: bool = False):
-        target: List = self._ascii2d_bovw if bovw else self._ascii2d
+        target = self._ascii2d_bovw if bovw else self._ascii2d
 
         for i, r in enumerate(resp.raw):
             if not r.url_list or i == 0:
                 continue
 
-            r.author = "None" if not r.author else r.author
+            r.author = r.author or "None"
             target.append({
-                "class": "ascii2d", "url": r.url, "author": r.author, "author_url": r.author_url,
+                "class": "ascii2d",
+                "url": r.url,
+                "author": r.author,
+                "author_url": r.author_url,
                 "thumbnail": r.thumbnail
             })
 
@@ -147,7 +147,5 @@ class AggregationSearch:
             self.exception.append(e)
 
     async def aggregation_search(self, url: str) -> Optional[Dict]:
-        tasks = [self.iqdb_search(url), self.ascii2d_search(url)]
-        await asyncio.gather(*tasks)
-
-        return self.iqdb_result if self.iqdb_result else self.ascii2d_result
+        await asyncio.gather(self.iqdb_search(url), self.ascii2d_search(url))
+        return self.iqdb_result or self.ascii2d_result
