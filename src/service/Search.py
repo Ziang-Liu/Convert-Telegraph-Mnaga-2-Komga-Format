@@ -49,13 +49,15 @@ class AggregationSearch:
 
     async def _search_with_type(self, url: str, type: str):
         async with Network(proxies = self._proxy) as client:
+            self.media = await self.get_media(url)
+
             if type == "ascii2d":
                 base_url = f'{self._cf_proxy}/https://ascii2d.net' if self._cf_proxy else 'https://ascii2d.net'
                 ascii2d = Ascii2D(base_url = base_url, client = client)
                 ascii2d_bovw = Ascii2D(base_url = base_url, client = client, bovw = True)
 
-                resp = await ascii2d.search(url = url)
-                bovw_resp = await ascii2d_bovw.search(url = url)
+                resp = await ascii2d.search(file = self.media)
+                bovw_resp = await ascii2d_bovw.search(file = self.media)
                 if not resp.raw and not bovw_resp.raw:
                     raise Exception(f"No ascii2d search results, search url: {resp.url}")
 
@@ -67,7 +69,7 @@ class AggregationSearch:
                 base_url_3d = f'{self._cf_proxy}/https://3d.iqdb.org' if self._cf_proxy else 'https://3d.iqdb.org'
                 iqdb = Iqdb(base_url = base_url, base_url_3d = base_url_3d, client = client)
 
-                resp = await iqdb.search(url = url)
+                resp = await iqdb.search(file = self.media)
                 if not resp.raw:
                     raise Exception(f"No iqdb search results, search url: {resp.url}")
 
@@ -77,7 +79,7 @@ class AggregationSearch:
                 base_url = f'{self._cf_proxy}/https://google.com' if self._cf_proxy else 'https://google.com'
                 google = Google(base_url = base_url, client = client)
 
-                resp = await google.search(url = url)
+                resp = await google.search(file = self.media)
                 if not resp.raw:
                     raise Exception(f"No google search results, search url: {resp.url}")
 
