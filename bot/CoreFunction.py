@@ -54,29 +54,36 @@ class PandoraBox:
                 return ConversationHandler.END
 
             if not search_result:
-                await update.message.reply_text("没有发现准确搜索结果😿")
+                await update.message.reply_text("No search results.")
                 return ConversationHandler.END
 
-            search_reply_message = f"[🖼️]({search_result['url']}) Gacha (>ワ<) [😼]({search_result['thumbnail']})"
+            for result in search_result:
+                if result["class"] == "iqdb":
+                    search_reply_message = f"[🖼️]({result['url']}) Iqdb Search [😼]({result['thumbnail']})"
+                    search_reply_integrated_buttons = [
+                        [InlineKeyboardButton(
+                            f"{result['source']}: {result['similarity']}% Match",
+                            url = result['url'])]
+                    ]
+                    await update.message.reply_markdown(
+                        search_reply_message, reply_markup = InlineKeyboardMarkup(search_reply_integrated_buttons)
+                    )
 
-            if search_result["class"] == "iqdb":
-                search_reply_integrated_buttons = [
-                    [InlineKeyboardButton(
-                        f"{search_result['source']}: {search_result['similarity']}% Match",
-                        url = search_result['url'])]
-                ]
-                await update.message.reply_markdown(
-                    search_reply_message, reply_markup = InlineKeyboardMarkup(search_reply_integrated_buttons)
-                )
-
-            elif search_result["class"] == "ascii2d":
-                search_reply_integrated_buttons = [
-                    [InlineKeyboardButton("Original", url = search_result['url'])],
-                    [InlineKeyboardButton(f"{search_result['author']}", url = search_result['author_url'])]
-                ]
-                await update.message.reply_markdown(
-                    search_reply_message, reply_markup = InlineKeyboardMarkup(search_reply_integrated_buttons)
-                )
+                elif result["class"] == "ascii2d":
+                    search_reply_message = f"[🖼️]({result['url']}) Ascii2d Search [😼]({result['thumbnail']})"
+                    search_reply_integrated_buttons = [
+                        [InlineKeyboardButton("Original", url = result['url'])],
+                        [InlineKeyboardButton(f"{result['author']}", url = result['author_url'])]
+                    ]
+                    await update.message.reply_markdown(
+                        search_reply_message, reply_markup = InlineKeyboardMarkup(search_reply_integrated_buttons)
+                    )
+                elif result["class"] == "google":
+                    search_reply_message = f"[🖼️]({result['url']}) Google Search [😼]({result['thumbnail']})"
+                    search_reply_integrated_buttons = [[InlineKeyboardButton("Original", url = result['url'])]]
+                    await update.message.reply_markdown(
+                        search_reply_message, reply_markup = InlineKeyboardMarkup(search_reply_integrated_buttons)
+                    )
 
         # start from here
         link_preview = update.message.reply_to_message.link_preview_options

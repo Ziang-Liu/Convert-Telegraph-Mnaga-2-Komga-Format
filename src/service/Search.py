@@ -49,20 +49,20 @@ class AggregationSearch:
 
     async def _search_with_type(self, url: str, type: str):
         async with Network(proxies = self._proxy) as client:
-            self.media = await self.get_media(url)
+            await self.get_media(url)
 
             if type == "ascii2d":
                 base_url = f'{self._cf_proxy}/https://ascii2d.net' if self._cf_proxy else 'https://ascii2d.net'
                 ascii2d = Ascii2D(base_url = base_url, client = client)
                 ascii2d_bovw = Ascii2D(base_url = base_url, client = client, bovw = True)
 
-                resp = await ascii2d.search(file = self.media)
-                bovw_resp = await ascii2d_bovw.search(file = self.media)
+                resp, bovw_resp = await asyncio.gather(ascii2d.search(file = self.media),
+                                                       ascii2d_bovw.search(file = self.media))
                 if not resp.raw and not bovw_resp.raw:
                     raise Exception(f"No ascii2d search results, search url: {resp.url}")
 
-                tasks = [self._format_ascii2d_result(bovw_resp, bovw = True), self._format_ascii2d_result(resp)]
-                await asyncio.gather(*tasks)
+                await asyncio.gather(self._format_ascii2d_result(bovw_resp, bovw = True),
+                                     self._format_ascii2d_result(resp))
 
             if type == "iqdb":
                 base_url = f'{self._cf_proxy}/https://iqdb.org' if self._cf_proxy else 'https://iqdb.org'
@@ -76,7 +76,7 @@ class AggregationSearch:
                 await self._format_iqdb_result(resp)
 
             if type == "google":
-                base_url = f'{self._cf_proxy}/https://google.com' if self._cf_proxy else 'https://google.com'
+                base_url = f'{self._cf_proxy}/https://www.google.com' if self._cf_proxy else 'https://www.google.com'
                 google = Google(base_url = base_url, client = client)
 
                 resp = await google.search(file = self.media)
@@ -86,9 +86,13 @@ class AggregationSearch:
                 await self._format_google_result(resp)
 
     async def _format_google_result(self, resp: GoogleResponse):
-        self.google_result["thumbnail"] = resp.raw[2].thumbnail
-        self.google_result["title"] = resp.raw[2].title
-        self.google_result["url"] = resp.raw[2].url
+        if len(resp.raw) >= 3:
+            self.google_result = {
+                "class": "google",
+                "thumbnail": resp.raw[2].thumbnail,
+                "title": resp.raw[2].title,
+                "url": resp.raw[2].url
+            }
 
     async def _format_iqdb_result(self, resp: IqdbResponse):
         selected_res = resp.raw[0]
@@ -111,7 +115,7 @@ class AggregationSearch:
         target = self._ascii2d_bovw if bovw else self._ascii2d
 
         for i, r in enumerate(resp.raw):
-            if not r.url_list or i == 0:
+            if not r.url_list or i == 0 or not r.url:
                 continue
 
             r.author = r.author or "None"
@@ -144,10 +148,15 @@ class AggregationSearch:
 
     async def google_search(self, url):
         try:
-            await self._search_with_type(url, 'google')
+            await self._search_with_type(url, 'google') if self._proxy else None
         except Exception as e:
             self.exception.append(e)
 
-    async def aggregation_search(self, url: str) -> Optional[Dict]:
-        await asyncio.gather(self.iqdb_search(url), self.ascii2d_search(url))
-        return self.iqdb_result or self.ascii2d_result
+    async def aggregation_search(self, url: str) -> Optional[List[Dict]]:
+        await asyncio.gather(self.iqdb_search(url), self.ascii2d_search(url), self.google_search(url))
+        result = []
+        result.append(self.iqdb_result) if self.iqdb_result else None
+        result.append(self.ascii2d_result) if self.ascii2d_result else None
+        result.append(self.google_result) if self.google_result else None
+
+        return result
