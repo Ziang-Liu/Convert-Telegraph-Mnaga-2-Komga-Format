@@ -215,7 +215,10 @@ class Telegraph:
             raise exc
 
     async def get_zip(self):
-        return await self._process_handler(is_zip = True)
+        try:
+            return await self._process_handler(is_zip = True)
+        except Exception as exc:
+            raise exc
 
     async def get_info(self):
         return await self._get_info_handler()

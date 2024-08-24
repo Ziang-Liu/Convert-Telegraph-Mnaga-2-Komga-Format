@@ -162,8 +162,9 @@ class PandoraBox:
 
 
 class TelegraphHandler:
-    def __init__(self, proxy: Optional[Proxy] = None, user_id: int = -1):
+    def __init__(self, proxy: Optional[Proxy] = None, cf_proxy: Optional[str] = None, user_id: int = -1):
         self._proxy = proxy
+        self._cf_proxy = cf_proxy
         self._user_id = user_id
         self._komga_task_queue = asyncio.Queue()
         self._idle_count = 0
@@ -175,26 +176,20 @@ class TelegraphHandler:
     async def _run_periodically(self):
         async def process_queue(queue, num_tasks):
             self._idle_count = 0
-            tasks = [Telegraph(await queue.get(), self._proxy) for _ in range(num_tasks)]
-            await asyncio.gather(*[task.get_zip() for task in tasks])
+            tasks = [Telegraph(await queue.get(), self._proxy, self._cf_proxy) for _ in range(num_tasks)]
+            try:
+                await asyncio.gather(*[task.get_zip() for task in tasks])
+            except Exception as exc:
+                logger.error(exc)
 
         while True:
-            await asyncio.sleep(60) if self._idle_count >= 20 else None
+            await asyncio.sleep(60) if self._idle_count >= 20 else await asyncio.sleep(3)
 
-            if not self._komga_task_queue.empty():
-                queue_size = self._komga_task_queue.qsize()
-
-                if queue_size == 1:
-                    self._idle_count = 0
-                    instance = Telegraph(await self._komga_task_queue.get(), self._proxy)
-                    await asyncio.create_task(instance.get_zip())
-                elif 2 <= queue_size <= 9:
-                    await process_queue(self._komga_task_queue, 2)
-                elif queue_size >= 10:
-                    await process_queue(self._komga_task_queue, 3)
+            while not self._komga_task_queue.empty():
+                self._idle_count = 0
+                await process_queue(self._komga_task_queue, 1 if 1 <= self._komga_task_queue.qsize() <= 4 else 2)
 
             self._idle_count += 1
-            await asyncio.sleep(3)
 
     async def _get_link(self, content = None):
         telegra_ph_links = URLExtract().find_urls(content)
