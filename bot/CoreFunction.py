@@ -174,7 +174,6 @@ class TelegraphHandler:
         self._cf_proxy = cf_proxy
         self._user_id = user_id
         self._komga_task_queue = asyncio.Queue()
-        self._idle_count = 0
 
         if user_id != -1:
             loop = asyncio.get_event_loop()
@@ -182,25 +181,25 @@ class TelegraphHandler:
 
     async def _run_periodically(self):
         async def process_queue(queue, num_tasks):
-            self._idle_count = 0
             tasks = [Telegraph(await queue.get(), self._proxy, self._cf_proxy) for _ in range(num_tasks)]
             try:
                 await asyncio.gather(*[task.get_zip() for task in tasks])
             except Exception as exc:
                 logger.error(exc)
 
+        idle_count = 0
         while True:
-            await asyncio.sleep(60) if self._idle_count >= 20 else await asyncio.sleep(3)
+            await asyncio.sleep(60) if idle_count >= 20 else await asyncio.sleep(3)
 
-            while not self._komga_task_queue.empty():
-                self._idle_count = 0
+            if not self._komga_task_queue.empty():
+                idle_count = 0
                 await process_queue(self._komga_task_queue, 1 if 1 <= self._komga_task_queue.qsize() <= 4 else 2)
 
-            self._idle_count += 1
+            idle_count += 1
 
     async def _get_link(self, content = None):
-        telegra_ph_links = URLExtract().find_urls(content)
-        target_link = next((url for url in telegra_ph_links if "telegra.ph" in url), None)
+        telegraph_links = URLExtract().find_urls(content)
+        target_link = next((url for url in telegraph_links if "telegra.ph" in url), None)
         await self._komga_task_queue.put(target_link) if target_link else None
 
     async def komga_start(self, update: Update, _):
