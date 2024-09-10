@@ -32,14 +32,9 @@ def _test(proxy: str):
     client = Client(transport = transport)
 
     try:
-        response = client.get("https://httpbin.org/ip")
-
-        if response.status_code != 200:
-            logger.error(f"[Proxy Init]: Connection test return status {response.status_code}. "
-                         f"Check your proxy URL or username/password")
-            exit(1)
+        client.get("https://api.telegram.org", follow_redirects = True).raise_for_status()
     except Exception as exc:
-        logger.error(f"[Proxy Init]: An error occurred: {exc}")
+        logger.error(f"[Proxy Init]: Error occurred when initializing proxy: {exc}")
         exit(1)
     finally:
         client.close()
