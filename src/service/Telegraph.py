@@ -4,6 +4,7 @@ import re
 import shutil
 from datetime import datetime, timedelta
 from typing import Optional
+from urllib.parse import urljoin
 from zipfile import ZipFile, ZIP_DEFLATED
 
 import aiofiles
@@ -20,8 +21,8 @@ from src.utils.Logger import logger
 class Telegraph:
     def __init__(self, url: str, proxy: Optional[Proxy] = None, cf_proxy: Optional[str] = None) -> None:
         self.url = f'{cf_proxy}/{url}' if cf_proxy else url
-        self._base_url = f'{cf_proxy}/https://telegra.ph' if cf_proxy else 'https://telegra.ph'
         self._proxy = proxy
+        self._cf_proxy = cf_proxy
         self._headers = {'User-Agent': UserAgent().random}
 
         self.title_raw: Optional[str] = None
@@ -95,12 +96,17 @@ class Telegraph:
         await create_queue()
 
     async def _get_info_handler(self, is_zip = False, is_epub = False) -> None:
-        async def regex(response: Response) -> None:
-            self._image_url_list = [self._base_url + i for i in re.findall(r'img src="(.*?)"', response.text)]
+        async def regex(r: Response) -> None:
+            self._image_url_list = [
+                (self._cf_proxy + full_url) if self._cf_proxy else full_url
+                for i in re.findall(r'img src="(.*?)"', r.text)
+                for full_url in [urljoin(str(r.url), i)]
+            ]
+
             self.title_raw = re.sub(
                 r'\*|\||\?|– Telegraph| |/|:',
                 lambda x: {'*': '٭', '|': '丨', '?': '？', '– Telegraph': '', ' ': '', '/': 'ǀ', ':': '∶'}[x.group()],
-                BeautifulSoup(response.text, 'html.parser').find("title").text
+                BeautifulSoup(r.text, 'html.parser').find("title").text
             )
 
             if len(self._image_url_list) == 0:
