@@ -126,42 +126,38 @@ class PandoraBox:
             def format_time(seconds):
                 return f"{int(seconds) // 60}m {int(seconds) % 60}s"
 
-            anime_search_task = TraceMoeApi(proxy = self._proxy, cf_proxy = self._cf_proxy)
-            anime_search_result = (await anime_search_task.search_by_url(url))[0]
-            if not anime_search_result['similarity'] <= 90.:
+            result = (await TraceMoeApi(proxy = self._proxy, cf_proxy = self._cf_proxy).search_by_url(url))[0]
+            if not result['similarity'] <= 90.:
                 await update.message.reply_text("没有发现搜索结果 XwX")
                 return ConversationHandler.END
 
-            anilist_url = f"https://anilist.co/anime/{anime_search_result['anilist']}"
-            search_buttons = [
-                [InlineKeyboardButton("AniList", url = anilist_url)],
-                [InlineKeyboardButton("Image Preview", url = anime_search_result['image'])],
-                [InlineKeyboardButton("Video Preview", url = anime_search_result['video'])],
+            url = f"https://anilist.co/anime/{result['anilist']}"
+            button = [
+                [InlineKeyboardButton("AniList", url = url)],
+                [InlineKeyboardButton("Image Preview", url = result['image'])],
+                [InlineKeyboardButton("Video Preview", url = result['video'])],
             ]
-            search_reply_text = (
-                f"[🔎]({anilist_url}) 搜索结果:\n"
-                f"时间线: `{format_time(float(anime_search_result['from']))}` - "
-                f"`{format_time(float(anime_search_result['to']))}`\n"
-                f"剧集: `{anime_search_result['episode']}`"
+            reply = (
+                f"[🔎]({url}) 搜索结果:\n"
+                f"时间线: `{format_time(float(result['from']))}` - "
+                f"`{format_time(float(result['to']))}`\n"
+                f"剧集: `{result['episode']}`"
             )
-            await update.message.reply_markdown(search_reply_text, reply_markup = InlineKeyboardMarkup(search_buttons))
+            await update.message.reply_markdown(reply, reply_markup = InlineKeyboardMarkup(button))
 
         # start from here
         link_preview = update.message.reply_to_message.link_preview_options
-        attachment = update.message.reply_to_message.effective_attachment
-
         if link_preview:
             await search_and_reply(link_preview.url)
 
         if filters.PHOTO.filter(update.message.reply_to_message):
-            photo_file = update.message.reply_to_message.photo[2]
-            file_link = (await context.bot.get_file(photo_file.file_id)).file_path
-            await search_and_reply(file_link)
+            photo = update.message.reply_to_message.photo[2]
+            await search_and_reply((await context.bot.get_file(photo.file_id)).file_path)
             return ConversationHandler.END
 
         if filters.Document.IMAGE.filter(update.message.reply_to_message):
-            file_link = (await context.bot.get_file(attachment.thumbnail.file_id)).file_path
-            await search_and_reply(file_link)
+            attachment = update.message.reply_to_message.effective_attachment
+            await search_and_reply((await context.bot.get_file(attachment.thumbnail.file_id)).file_path)
             return ConversationHandler.END
 
         await update.message.reply_text("Unsupported type()")
@@ -169,38 +165,45 @@ class PandoraBox:
 
 
 class TelegraphHandler:
-    def __init__(self, proxy: Optional[Proxy] = None, cf_proxy: Optional[str] = None, user_id: int = -1):
+    def __init__(
+            self,
+            proxy: Optional[Proxy] = None,
+            cloudflare_worker_proxy: Optional[str] = None,
+            telegram_user_id: int = -1
+    ):
         self._proxy = proxy
-        self._cf_proxy = cf_proxy
-        self._user_id = user_id
-        self._komga_task_queue = asyncio.Queue()
+        self._cf_proxy = cloudflare_worker_proxy
+        self._user_id = telegram_user_id
+        self._tasks = asyncio.Queue()
 
-        if user_id != -1:
-            loop = asyncio.get_event_loop()
-            loop.create_task(self._run_periodically())
+        if telegram_user_id != -1:
+            asyncio.get_event_loop().create_task(self._main_loop())
 
-    async def _run_periodically(self):
-        async def process_queue(queue, num_tasks):
-            tasks = [Telegraph(await queue.get(), self._proxy, self._cf_proxy) for _ in range(num_tasks)]
+    async def _main_loop(self):
+        async def worker(queue, n):
+            tasks = [(Telegraph(await queue.get(), self._proxy, self._cf_proxy)).get_zip() for _ in range(n)]
+
             try:
-                await asyncio.gather(*[task.get_zip() for task in tasks])
-            except Exception as exc:
-                logger.error(exc)
+                await asyncio.gather(*tasks, return_exceptions = True)
+            except Exception as e:
+                logger.error(f"[CoreFunction]: {e}")
+            finally:
+                [queue.task_done() for _ in tasks]
 
         idle_count = 0
         while True:
-            await asyncio.sleep(60) if idle_count >= 20 else await asyncio.sleep(3)
+            await asyncio.sleep(10) if idle_count >= 20 else await asyncio.sleep(1)
 
-            if not self._komga_task_queue.empty():
+            if not self._tasks.empty():
                 idle_count = 0
-                await process_queue(self._komga_task_queue, 1 if 1 <= self._komga_task_queue.qsize() <= 4 else 2)
+                await worker(self._tasks, 1 if 1 <= self._tasks.qsize() <= 4 else 2)
 
             idle_count += 1
 
     async def _get_link(self, content = None):
         telegraph_links = URLExtract().find_urls(content)
         target_link = next((url for url in telegraph_links if "telegra.ph" in url), None)
-        await self._komga_task_queue.put(target_link) if target_link else None
+        await self._tasks.put(target_link) if target_link else None
 
     async def komga_start(self, update: Update, _):
         if update.message.from_user.id != self._user_id:
