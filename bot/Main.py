@@ -39,12 +39,12 @@ if __name__ == "__main__":
     _cf_worker_proxy = _env.get_variable("CF_WORKER_PROXY")
     _proxy = _env.get_variable("PROXY")
     proxy = proxy_init(_proxy) if _proxy else None
-    # telegram basic params
+    # Telegram basic params
     _bot_token = _env.get_variable("BOT_TOKEN")
     _my_user_id = _env.get_variable("MY_USER_ID")
-    # chatanywhere api token
+    # ChatAnywhere api token
     _chat_anywhere_key = _env.get_variable("CHAT_ANYWHERE_KEY")
-    # telegram bot api url
+    # Telegram bot api url
     _base_url = 'https://api.telegram.org/bot'
     _base_file_url = 'https://api.telegram.org/file/bot'
     base_url = f'{_cf_worker_proxy}/{_base_url}' if _cf_worker_proxy else _base_url
@@ -84,8 +84,8 @@ if __name__ == "__main__":
     if _my_user_id == -1:
         logger.info("[Main]: Master's user id not set, telegraph syncing service will not work.")
     else:
-        # core function: sync telegrph H manga to local storage
-        telegraph = TelegraphHandler(proxy = proxy, user_id = _my_user_id)
+        # core function: sync Telegraph manga to local storage
+        telegraph = TelegraphHandler(proxy = proxy, telegram_user_id = _my_user_id)
         telegraph_monitor = ConversationHandler(
             entry_points = [CommandHandler(command = "komga", callback = telegraph.komga_start)],
             states = {KOMGA: [MessageHandler(filters = filters.TEXT, callback = telegraph.add_task)]},
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         )
         neko_chan.add_handler(telegraph_monitor)
 
-    # core function: use chatanywhere api to use chatgpt
+    # core function: use ChatAnywhere api to use chatgpt
     chat_anywhere = ChatAnywhereHandler(
         proxy = proxy,
         user_id = int(_my_user_id),
