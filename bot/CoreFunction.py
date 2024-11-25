@@ -1,7 +1,10 @@
 import asyncio
 import re
-from typing import Optional
+from io import BytesIO
+from typing import Optional, List
 
+from PIL import Image
+from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 from httpx import Proxy
 from telegram import (
@@ -20,11 +23,69 @@ from src import (
     AggregationSearch,
     ChatAnywhereApi,
     logger,
-    Telegraph,
     TraceMoeApi
 )
+from src.service import Telegraph, TelegraphDatabase
 
 (KOMGA, GPT_INIT, GPT_OK) = range(3)
+
+
+class LongSticker:
+    def __init__(self, proxy: Optional[Proxy] = None, cloudflare_worker_proxy: Optional[Proxy] = None):
+        self._proxy = proxy
+        self._cf_proxy = cloudflare_worker_proxy
+        self._headers = {'User-Agent': UserAgent().random}
+
+    async def play_from_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        async def composition(b: bytes) -> bytes:
+            with Image.open("res/sticker/玩XX玩的.jpg") as background, \
+                    Image.open(BytesIO(b)) as overlay:
+                ratio = overlay.size[0] / overlay.size[1]
+
+                if 0.66 <= ratio <= 1.5:
+                    overlay = overlay.resize((115, int(overlay.size[1] * 115 / overlay.size[0])),
+                                             resample = Image.Resampling.BICUBIC)
+                    background.paste(overlay, (145, 370))
+                elif ratio > 1.5:
+                    overlay = overlay.resize((190, int(overlay.size[1] * 190 / overlay.size[0])),
+                                             resample = Image.Resampling.BICUBIC)
+                    background.paste(overlay, (115, 410))
+                else:
+                    overlay = overlay.resize((60, int(overlay.size[1] * 60 / overlay.size[0])),
+                                             resample = Image.Resampling.BICUBIC)
+                    background.paste(overlay, (180, 350))
+
+                image_bytes = BytesIO()
+                background.save(image_bytes, 'WEBP')
+                return image_bytes.getvalue()
+
+        media_task = AggregationSearch(proxy = self._proxy, cf_proxy = self._cf_proxy)
+        file_id = None
+
+        if update.message.reply_to_message:
+            reply_message = update.message.reply_to_message
+
+            if filters.PHOTO.filter(reply_message):
+                file_id = reply_message.photo[2].file_id
+            elif filters.Sticker.STATIC.filter(reply_message):
+                file_id = reply_message.sticker.file_id
+            elif filters.Document.IMAGE.filter(reply_message):
+                file_id = reply_message.document.file_id
+        else:
+            if filters.PHOTO.filter(update.message):
+                file_id = update.message.photo[2].file_id
+            elif filters.Sticker.STATIC.filter(update.message):
+                file_id = update.message.sticker.file_id
+            elif filters.Document.IMAGE.filter(update.message):
+                file_id = update.message.document.file_id
+
+        if file_id:
+            media = await media_task.get_media((await context.bot.get_file(file_id)).file_path)
+            await update.message.reply_sticker(await composition(media))
+        else:
+            await update.message.reply_text("Unsupported Input")
+
+        return ConversationHandler.END
 
 
 class PandoraBox:
@@ -108,9 +169,9 @@ class PandoraBox:
 
         if filters.Sticker.ALL.filter(update.message.reply_to_message):
             sticker_task = AggregationSearch(proxy = self._proxy, cf_proxy = self._cf_proxy)
-            await sticker_task.get_media((await context.bot.get_file(attachment.file_id)).file_path)
-            await update.message.reply_document(sticker_task.media, filename = f"{attachment.file_unique_id}.webm") \
-                if attachment.is_video else await update.message.reply_photo(photo = sticker_task.media)
+            media = await sticker_task.get_media((await context.bot.get_file(attachment.file_id)).file_path)
+            await update.message.reply_document(media, filename = f"{attachment.file_unique_id}.webm") \
+                if attachment.is_video else await update.message.reply_photo(photo = media)
             return ConversationHandler.END
 
         if filters.Document.IMAGE.filter(update.message.reply_to_message):
@@ -176,12 +237,11 @@ class TelegraphHandler:
         self._user_id = telegram_user_id
         self._tasks = asyncio.Queue()
 
-        if telegram_user_id != -1:
-            asyncio.get_event_loop().create_task(self._main_loop())
+        asyncio.get_event_loop().create_task(self._main_loop()) if telegram_user_id != -1 else None
 
     async def _main_loop(self):
         async def worker(queue, n):
-            tasks = [(Telegraph(await queue.get(), self._proxy, self._cf_proxy)).get_zip() for _ in range(n)]
+            tasks = [await queue.get() for _ in range(n)]
 
             try:
                 await asyncio.gather(*tasks, return_exceptions = True)
@@ -196,14 +256,9 @@ class TelegraphHandler:
 
             if not self._tasks.empty():
                 idle_count = 0
-                await worker(self._tasks, 1 if 1 <= self._tasks.qsize() <= 4 else 2)
+                await worker(self._tasks, 1 if self._tasks.qsize() == 1 else 2)
 
             idle_count += 1
-
-    async def _get_link(self, content = None):
-        telegraph_links = URLExtract().find_urls(content)
-        target_link = next((url for url in telegraph_links if "telegra.ph" in url), None)
-        await self._tasks.put(target_link) if target_link else None
 
     async def komga_start(self, update: Update, _):
         if update.message.from_user.id != self._user_id:
@@ -215,7 +270,56 @@ class TelegraphHandler:
         return KOMGA
 
     async def add_task(self, update: Update, _):
-        await self._get_link(update.message.text_markdown) if update.message.from_user.id == self._user_id else None
+        if update.message.from_user.id != self._user_id:
+            return KOMGA
+
+        urls = list(set(i for i in URLExtract().find_urls(update.message.text_html_urled) if "telegra.ph" in i))
+        if len(urls) != 1:
+            [await self._tasks.put(Telegraph(url, self._proxy, self._cf_proxy).get_zip()) for url in urls]
+
+            logger.warning("[CoreFunction]: Multiple urls detected, database won't be updated."
+                           f"Source:\n{update.message.text_html_urled}")
+            return KOMGA
+
+        soup = BeautifulSoup(update.message.text_html_urled, "html.parser")
+        matches = {}
+
+        if not soup.find_all('code'):
+            for line in update.message.text_html_urled.split('\n'):
+                line = line.replace('：', ':')
+                key, value = line.strip().split(':', 1)
+                if key in ["预览", "原始地址"]:
+                    value = re.search(r'href="([^"]+)"', line).group(1)
+                else:
+                    value = value.lstrip('#').split('#')
+                matches[key] = value
+        else:
+            for code in soup.find_all('code'):
+                key = code.text.strip().translate(str.maketrans('', '', ':：'))
+                value = str(code.next_sibling).strip().translate(str.maketrans('', '', ':： '))
+                link = code.find_next('a')
+                if link and 'href' in link.attrs and key in ["预览", "原始地址"]:
+                    value = link.get('href')
+                else:
+                    value = value.lstrip('#').split('#')
+                matches[key] = value
+
+        cvt_dict = {
+            "语言": 'language', "原作": 'original', "角色": 'characters', "艺术家": 'artist',
+            "团队": 'team', "混合": 'others', "女性": 'female', "男性": 'male',
+            "预览": 'preview_url', "原始地址": 'original_url', "其他": "others"
+        }
+
+        db_dict = {}
+        for k, v in matches.items():
+            new_key = cvt_dict.get(k, k)
+            if isinstance(v, List):
+                db_dict.setdefault(new_key, []).extend(v)
+            else:
+                db_dict[new_key] = db_dict.setdefault(new_key, v)
+
+        d_task = TelegraphDatabase()
+        await self._tasks.put(d_task.insert(d_task.new(db_dict), Telegraph(urls[0], self._proxy, self._cf_proxy)))
 
 
 class ChatAnywhereHandler:
