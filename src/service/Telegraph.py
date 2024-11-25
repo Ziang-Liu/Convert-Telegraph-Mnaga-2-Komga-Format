@@ -2,8 +2,11 @@ import asyncio
 import os
 import re
 import shutil
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional
+from random import randint
+from sqlite3 import connect, Cursor
+from typing import Optional, List, Dict, Union
 from urllib.parse import urljoin
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -12,10 +15,15 @@ import httpx
 from bs4 import BeautifulSoup
 from ebooklib import epub
 from fake_useragent import UserAgent
-from httpx import URL, AsyncClient, Proxy, Response
+from httpx import URL, AsyncClient, Proxy, Response, HTTPStatusError
 
 from src.Environment import EnvironmentReader
 from src.utils.Logger import logger
+
+
+class FileIncompleteError(Exception):
+    def __init__(self, *args, **kwargs):
+        pass
 
 
 class Telegraph:
@@ -57,39 +65,58 @@ class Telegraph:
                 modified_time = datetime.fromtimestamp(os.path.getmtime(path))
                 shutil.rmtree(path) if datetime.now() - modified_time > timedelta(days = 1) else None
 
-    async def _task_handler(self) -> int:
+    async def _task_handler(self, timeout: int) -> int:
         async def download_handler():
             async def worker(q: asyncio.Queue, client: AsyncClient):
                 while True:
                     i, u = await q.get()
-                    if u is None:
+                    p = os.path.join(self._download_path, f"{i}.jpg")
+
+                    if not u:
                         q.task_done()
                         break
 
-                    path = os.path.join(self._download_path, f"{i}.jpg")
-                    if os.path.exists(path) and os.path.getsize(path) != 0:
-                        return
+                    if os.path.exists(p) and os.path.getsize(p) != 0:
+                        logger.debug(f"[Telegraph]: Skip existing image '{p}'")
+                        q.task_done()
+                        continue
 
-                    async with aiofiles.open(path, 'wb') as f:
-                        await f.write(await (await client.get(u, headers = self._headers)).raise_for_status().aread())
+                    r = (await client.get(u, headers = self._headers, timeout = 5)).raise_for_status()
 
+                    if not r.headers.get('content-length'):
+                        raise FileIncompleteError(f"{service_host} refused to response.")
+
+                    async with aiofiles.open(p, 'wb') as f:
+                        await f.write(await r.aread())
+
+                    if os.path.getsize(p) != int(r.headers.get('Content-Length')):
+                        raise FileIncompleteError(f"Image '{p}' is broken.")
+
+                    logger.debug(f"[Telegraph]: Download complete for '{p}'.")
                     q.task_done()
 
             # async parallel download
             download_queue = asyncio.Queue()
-            [download_queue.put_nowait((i, u)) for i, u in enumerate(self._image_url_list)]
+            service_host = URL(self._image_url_list[0]).host
+            for num, url in enumerate(self._image_url_list):
+                download_queue.put_nowait((num, url))
 
-            async with httpx.AsyncClient(timeout = 10, proxy = self._proxy) as c:
+            logger.debug(f"[Telegraph]: Queue Length: {len(self._image_url_list)}, "
+                         f"Image hosting service host: {service_host}")
+
+            async with httpx.AsyncClient(proxy = self._proxy) as c:
                 tasks = []
-                [tasks.append(asyncio.create_task(worker(download_queue, c))) for _ in range(self._thread)]
+                for _ in range(self._thread):
+                    tasks.append(asyncio.create_task(worker(download_queue, c)))
+
                 await download_queue.join()
 
-                [download_queue.put_nowait((None, None)) for _ in range(self._thread)]
+                for _ in range(self._thread):
+                    download_queue.put_nowait((None, None))
+
                 await asyncio.gather(*tasks)
 
-        self._zip_file_path = os.path.join(self.manga_path, self.title + '.zip')
-        self._epub_file_path = os.path.join(self.manga_path, self.title + '.epub')
-
+        # execute script
         if os.path.exists(self._zip_file_path):
             logger.info(f"[Telegraph]: Existed ZIP at \"{self._zip_file_path}\"")
             return 1
@@ -98,12 +125,23 @@ class Telegraph:
             return 1
 
         os.makedirs(self._download_path, exist_ok = True)
-        await download_handler()
 
-    async def _get_info_handler(self, is_zip = False, is_epub = False) -> None:
+        try:
+            download_task = asyncio.create_task(download_handler())
+            await asyncio.wait_for(download_task, timeout = len(self._image_url_list) * timeout)
+        except asyncio.TimeoutError:
+            return 2
+        except FileIncompleteError:
+            return 3
+        except HTTPStatusError:
+            return 4
+
+        return 0
+
+    async def _get_info_handler(self, is_zip = False, is_epub = False):
         async def regex(r: Response):
             self._image_url_list = [
-                (self._cf_proxy + full_url) if self._cf_proxy else full_url
+                f"{self._cf_proxy}/{full_url}" if self._cf_proxy else full_url
                 for i in re.findall(r'img src="(.*?)"', r.text)
                 for full_url in [urljoin(str(r.url), i)]
             ]
@@ -115,30 +153,32 @@ class Telegraph:
             )
 
             if len(self._image_url_list) == 0:
-                raise Exception(f"[Telegraph]: Empty URL list, Source: \"{self._url}\"")
+                raise Exception(f"Images not found! [Source]: \"{self._url}\"")
 
             self.thumbnail = self._image_url_list[0]
 
-            title_match = next(
+            matched_title = next(
                 (re.search(pattern, self._raw_title)
                  for pattern in [r'](.*?\(.*?\))', r'](.*?)[(\[]', r"](.*)"]
                  if re.search(pattern, self._raw_title)), None
             )
-            self.title = title_match.group(1) if title_match else self._raw_title
+            self.title = matched_title.group(1) if matched_title else self._raw_title
 
-            artist_match = re.search(r'\[(.*?)(?:\((.*?)\))?]', self._raw_title)
-            self.artist = artist_match.group(2) or artist_match.group(1) if artist_match else 'その他'
+            matched_artist = re.search(r'\[(.*?)(?:\((.*?)\))?]', self._raw_title)
+            self.artist = matched_artist.group(2) or matched_artist.group(1) if matched_artist else "その他"
 
             if is_epub:
                 self.manga_path = os.path.join(self.epub_dir, self.artist)
-            elif is_zip or re.search(r'Fanbox|FANBOX|FanBox|Pixiv|PIXIV', self.artist):
+            elif is_zip or re.search(r"Fanbox|FANBOX|FanBox|Pixiv|PIXIV", self.artist):
                 self.manga_path = os.path.join(self.komga_dir, self.artist)
             else:
                 self.manga_path = os.path.join(self.komga_dir, self.title)
 
             self._download_path = os.path.join(self._tmp_dir, self.title)
-            logger.info(f"[Telegraph]: Started job for '{self._raw_title}'")
+            self._zip_file_path = os.path.join(self.manga_path, self.title + '.zip')
+            self._epub_file_path = os.path.join(self.manga_path, self.title + '.epub')
 
+        # execute script
         async with AsyncClient(timeout = 10, proxy = self._proxy) as client:
             await regex((await client.get(url = self._url, headers = self._headers)).raise_for_status())
 
@@ -155,34 +195,28 @@ class Telegraph:
             logger.info(f"[Telegraph]: Create ZIP at '{self._zip_file_path}'")
 
         async def create_epub():
+            manga = epub.EpubBook()
+            manga.set_title(self.title)
+            manga.add_author(self.artist)
+            manga.set_language('zh') if re.search(r'翻訳|汉化|中國|翻译|中文|中国', self._raw_title) else None
+
             sorted_images = sorted(
                 [f for f in os.listdir(self._download_path) if
                  os.path.isfile(os.path.join(self._download_path, f)) and str(f).endswith('.jpg')],
                 key = lambda x: int(re.search(r'\d+', x).group())
             )
+
             async with aiofiles.open(os.path.join(self._download_path, sorted_images[0]), "rb") as f:
-                manga_cover = await f.read()
+                manga.set_cover("cover.jpg", await f.read())
 
-            manga = epub.EpubBook()
-            manga.set_title(self.title)
-            manga.add_author(self.artist)
-            manga.set_cover("cover.jpg", manga_cover)
-            manga.set_language('zh') if re.search(r'翻訳|汉化|中國|翻译|中文|中国', self._raw_title) else None
+            for i, path in enumerate(sorted_images):
+                html = epub.EpubHtml(title = f"Page {i + 1}", file_name = f"image_{i + 1}.xhtml",
+                                     content = f"<html><body><img src='{path}'></body></html>".encode('utf8'))
 
-            for i, img_path in enumerate(sorted_images):
-                html = epub.EpubHtml(
-                    title = f"Page {i + 1}", file_name = f"image_{i + 1}.xhtml",
-                    content = f"<html><body><img src='{img_path}'></body></html>".encode('utf8')
-                )
-                async with aiofiles.open(os.path.join(self._download_path, img_path), "rb") as f:
-                    img_byte = await f.read()
+                async with aiofiles.open(os.path.join(self._download_path, path), "rb") as f:
+                    manga.add_item(epub.EpubImage(
+                        uid = path, file_name = path, media_type = "image/jpeg", content = await f.read()))
 
-                manga.add_item(
-                    epub.EpubImage(
-                        uid = img_path, file_name = img_path,
-                        media_type = "image/jpeg", content = img_byte
-                    )
-                )
                 manga.add_item(html)
                 manga.spine.append(html)
                 manga.toc.append(epub.Link(html.file_name, html.title, ''))
@@ -192,41 +226,336 @@ class Telegraph:
 
             os.mkdir(self.manga_path) if not os.path.exists(self.manga_path) else None
             os.chdir(self.manga_path)
-            epub.write_epub(self.title + '.epub', manga, {})
+            epub.write_epub(f"{self.title}.epub", manga, {})
             os.chdir(os.getcwd())
             logger.info(f"[Telegraph]: Create EPUB at '{self._epub_file_path}'")
 
-        async def check_integrity(first_time = True) -> None:
-            empty = [file for file in [file for file in os.listdir(self._download_path)]
-                     if os.path.getsize(os.path.join(self._download_path, file)) == 0]
+        # execute script
+        await self._get_info_handler(is_zip = is_zip, is_epub = is_epub) if not self._raw_title else None
+        logger.info(f"[Telegraph]: Create task for '{self._raw_title}'")
 
-            if len(empty) != 0 and first_time:
-                await self._task_handler()
-                await check_integrity(first_time = False)
-            elif len(empty) != 0 and not first_time:
-                raise Exception(f"[Telegraph]: Images are broken! Source: \"{self._raw_title}\"")
-
-        await self._get_info_handler(is_zip = is_zip, is_epub = is_epub)
-
-        if await self._task_handler() == 1:
+        return_value = await self._task_handler(timeout = 3)
+        if return_value == 1:
             return
+        if return_value == 2:
+            if len(os.listdir(self._download_path)) == 0:
+                logger.error(f"[Telegraph]: Timeout waiting for download. "
+                             f"Location: '{self._download_path}', Url: '{self._url}'")
+                raise
 
-        await check_integrity()
+            logger.warning(f"[Telegraph]: Timeout waiting for download. Retrying...")
+
+            if await self._task_handler(timeout = 10) == 2:
+                logger.error(f"[Telegraph]: Retried for '{self._url}' failed. Location: '{self._download_path}'")
+                raise
+        if return_value == 3:
+            if await self._task_handler(timeout = 10) == 3:
+                logger.error(f"[Telegraph]: Downloaded with broken images."
+                             f"Location: '{self._download_path}', Url: '{self._url}'")
+                raise
+
+        if return_value == 4:
+            logger.error(f"[Telegraph]: Server response error."
+                         f"Location: '{self._download_path}', Url: '{self._url}'")
+            raise
+
         await create_zip() if is_zip else await create_epub()
 
     async def get_epub(self) -> str:
-        """Successfully get epub, return file path, else raise exception"""
-        try:
-            await self._process_handler(is_epub = True)
-            return self._epub_file_path
-        except Exception as exc:
-            raise exc
+        """Pack manga to epub format and return file path"""
+        await self._process_handler(is_epub = True)
+        return self._epub_file_path
 
-    async def get_zip(self):
-        try:
-            return await self._process_handler(is_zip = True)
-        except Exception as exc:
-            raise exc
+    async def get_zip(self) -> str:
+        """Pack manga to zip format"""
+        await self._process_handler(is_zip = True)
+        return self._zip_file_path
 
     async def get_info(self):
+        """Gey basic info from Telegraph link"""
         return await self._get_info_handler()
+
+
+class TelegraphDatabase:
+    @dataclass
+    class TelegraphData:
+        """
+        title: The title of the Telegraph Manga.
+        file_location: Download Location, get from Telegraph().
+        original_url: (Optional) The original URL of the content, which can be either an EX, NH, or EH URL.
+        preview_url: (Optional) Telegraph Link: "https://telegra.ph/{title}".
+        language: (Optional) A list of language tags.
+        artist: (Optional) A list of artist tags.
+        team: (Optional) A list of team tags.
+        original: (Optional) A list of original works or sources related to the content.
+        characters: (Optional) A list of characters tags.
+        male: (Optional) A list of male tags.
+        female: (Optional) A list of female tags.
+        others.: (Optional) A list of any other relevant tags.
+        """
+        title: str = ''
+        file_location: str = ''
+        tag_id: Optional[int] = None
+        telegraph_id: Optional[int] = None
+        time_added: Optional[str] = None
+        original_url: Optional[str] = None
+        preview_url: Optional[str] = None
+        language: Optional[List[str]] = None
+        artist: Optional[List[str]] = None
+        team: Optional[List[str]] = None
+        original: Optional[List[str]] = None
+        characters: Optional[List[str]] = None
+        male: Optional[List[str]] = None
+        female: Optional[List[str]] = None
+        others: Optional[List[str]] = None
+
+        def __post_init__(self, *args, **kwargs):
+            attributes = [
+                'title', 'file_location', 'tag_id', 'telegraph_id',
+                'time_added', 'original_url', 'preview_url',
+                'language', 'artist', 'team', 'original',
+                'characters', 'male', 'female', 'others'
+            ]
+
+            for i, attr in enumerate(attributes):
+                if i < len(args):
+                    setattr(self, attr, args[i])
+
+            for key, value in kwargs.items():
+                if key in attributes:
+                    setattr(self, key, value)
+
+    def __init__(self):
+        self._attrs = ['tag_id', 'time_added', 'title', 'original_url', 'preview_url',
+                       'file_location', 'telegraph_id', 'lang', 'artist', 'team',
+                       'original', 'characters', 'male', 'female', 'others']
+
+        if not os.path.exists("../telegraph.db"):
+            logger.info("[TelegraphDatabase]: Initializing new database...")
+            self._database = connect("../telegraph.db")
+
+            cursor = self._database.cursor()
+            _script = [
+                """
+                CREATE TABLE telegraph (
+                    tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    time_added DATE,
+                    title VARCHAR(100) NOT NULL,
+                    original_url VARCHAR(200),
+                    preview_url VARCHAR(200),
+                    file_location VARCHAR(200),
+                    FOREIGN KEY (tag_id) REFERENCES tag(telegraph_id)
+                );
+                """,
+                """
+                CREATE TABLE tag (
+                    telegraph_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lang JSON,
+                    artist JSON,
+                    team JSON,
+                    original JSON,
+                    characters JSON,
+                    male JSON,
+                    female JSON,
+                    others JSON,
+                    FOREIGN KEY (telegraph_id) REFERENCES telegraph(tag_id)
+                );
+                """,
+                """
+                CREATE INDEX idx_telegraph_tag_id ON telegraph (tag_id);
+                """,
+                """
+                CREATE INDEX idx_telegraph_name ON telegraph (title);
+                """,
+                """
+                CREATE INDEX idx_tag_telegraph_id ON tag (telegraph_id);
+                """,
+                """
+                CREATE INDEX idx_tag_language ON tag (lang);
+                """,
+                """
+                CREATE INDEX idx_tag_artist ON tag (artist);
+                """,
+                """
+                CREATE INDEX idx_tag_team ON tag (team);
+                """,
+                """
+                CREATE INDEX idx_tag_original ON tag (original);
+                """,
+                """
+                CREATE INDEX idx_tag_character ON tag (characters);
+                """,
+                """
+                CREATE INDEX idx_tag_male ON tag (male);
+                """,
+                """
+                CREATE INDEX idx_tag_female ON tag (female);
+                """,
+                """
+                CREATE INDEX idx_tag_others ON tag (others);
+                """,
+            ]
+            [cursor.execute(script) for script in _script]
+            self._database.commit()
+            cursor.close()
+        else:
+            self._database = connect("../telegraph.db")
+
+    def new(self, data: Union[Dict, List]) -> TelegraphData:
+        """
+        Get an empty TelegraphData instance, or deliver a List or a Dict to fill some params.
+
+        Example:
+            new({
+                'Manga Title',  # 位置参数: title
+                'file/location',  # 位置参数: file_location
+                tag_id=1,  # 关键字参数: tag_id
+                original_url='https://example.com',  # 关键字参数: original_url
+                language=['English', 'Japanese'],  # 关键字参数: language
+                artist=['Artist Name'],  # 关键字参数: artist
+                team=['Team Name'],  # 关键字参数: team
+                others=['Some other tags']  # 关键字参数: others
+            })
+        """
+
+        if isinstance(data, Dict):
+            return self.TelegraphData(**{k: v for k, v in data.items() if k in self.TelegraphData.__annotations__})
+        if isinstance(data, List):
+            return self.TelegraphData(*data)
+
+    async def insert(
+            self,
+            data: TelegraphData,
+            telegraph_task: Optional[Telegraph] = None
+    ):
+        """
+        Insert filled data into the Telegraph database.
+        Please ensure data's integrity.
+        """
+        if telegraph_task:
+            data.file_location = await telegraph_task.get_zip()
+            data.title = telegraph_task.title
+
+        cursor = self._database.cursor()
+        telegraph_script = \
+            """
+            INSERT INTO telegraph (time_added, title, original_url, preview_url, file_location)
+            VALUES (?, ?, ?, ?, ?)
+            """
+        tag_script = \
+            """
+            INSERT INTO tag (lang, artist, team, original, characters, male, female, others)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
+        cursor.execute(telegraph_script, (
+            datetime.today(), data.title,
+            data.original_url, data.preview_url, data.file_location))
+        cursor.execute(tag_script, (
+            f'{data.language}', f'{data.artist}', f'{data.team}', f'{data.original}',
+            f'{data.characters}', f'{data.male}', f'{data.female}', f'{data.others}'
+        ))
+        self._database.commit()
+        logger.info(f"[Telegraph]: Add {data.title} to telegraph database")
+        cursor.close()
+
+    async def remove(self, idx: int):
+        """Delete a Telegraph entry."""
+        cursor = self._database.cursor()
+        script = ["DELETE FROM telegraph WHERE tag_id = ?", "DELETE FROM tag WHERE telegraph_id = ?"]
+        [cursor.execute(script, (idx,)) for script in script]
+
+        self._database.commit()
+        cursor.close()
+
+    async def modify(self, table: int, attr: int, idx: int, elem: str | List[str]):
+        """
+        Modify a Telegraph entry.
+
+        :param table telegraph = 0, tag = 1
+        :param attr tag_id = 0, time_added = 1, title = 2, original_url = 3, preview_url = 4,
+                    file_location = 5, telegraph_id = 6, lang = 7, artist = 8, team = 9,
+                    original = 10, characters = 11, male = 12, female = 13, others = 14
+        :param idx primary key index number
+        :param elem see members in TelegraphData()
+        """
+        if (table == 0 and attr > 5) or (table == 1 and attr < 6):
+            raise Exception(f"No attribute {attr} in {table}.")
+
+        cursor = self._database.cursor()
+        script = \
+            f"""
+            UPDATE {'telegraph' if table == 0 else 'tag'} SET {self._attrs[attr]} = ?
+            WHERE {'tag_id' if table == 0 else 'telegraph_id'} = ?
+            """
+
+        cursor.execute(script, (idx, elem))
+        self._database.commit()
+        cursor.close()
+
+    async def check_health(self):
+        cursor = self._database.cursor()
+
+        if not (cursor.execute("PRAGMA integrity_check").fetchall())[0][0] == 'ok':
+            cursor.close()
+            raise Exception("Database health check failed.")
+
+        cursor.close()
+
+    async def disconnect(self):
+        self._database.close()
+
+    def _return_search_result(self, cursor: Cursor) -> List[Optional[TelegraphData]]:
+        result = cursor.fetchall()
+        self._database.commit()
+        cursor.close()
+        return [self.TelegraphData(**{k: r[i] for i, k in enumerate(self._attrs) if k in self._attrs}) for r in result]
+
+    async def search_by_title(self, key: str) -> List[Optional[TelegraphData]]:
+        cursor = self._database.cursor()
+        script = \
+            """
+            SELECT * FROM telegraph
+            JOIN tag ON telegraph.tag_id = tag.telegraph_id
+            WHERE title LIKE ?;
+            """
+        cursor.execute(script, (f"%{key}%",))
+        return self._return_search_result(cursor)
+
+    async def search_by_tag(self, key: str) -> List[Optional[TelegraphData]]:
+        cursor = self._database.cursor()
+        script = \
+            """
+            SELECT * FROM telegraph
+            WHERE tag_id = (
+                SELECT telegraph_id FROM tag
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM (
+                        SELECT * FROM json_each(lang) UNION ALL
+                        SELECT * FROM json_each(artist) UNION ALL
+                        SELECT * FROM json_each(team) UNION ALL
+                        SELECT * FROM json_each(original) UNION ALL
+                        SELECT * FROM json_each(characters) UNION ALL
+                        SELECT * FROM json_each(male) UNION ALL
+                        SELECT * FROM json_each(female) UNION ALL
+                        SELECT * FROM json_each(others)
+                    ) AS keywords
+                    WHERE keywords.value = ?
+                )
+            );
+            """
+        cursor.execute(script, (key,))
+        return self._return_search_result(cursor)
+
+    async def random(self):
+        cursor = self._database.cursor()
+        script = \
+            """
+            SELECT * FROM telegraph
+            JOIN tag ON telegraph.tag_id = tag.telegraph_id
+            WHERE tag_id = ?
+            ORDER BY random()
+            LIMIT 1
+            """
+        cursor.execute(script, (randint(0, 100),))
+        return self._return_search_result(cursor)
