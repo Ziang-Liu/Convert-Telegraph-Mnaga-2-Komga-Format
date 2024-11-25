@@ -17,6 +17,7 @@ from bot import (
     GPT_INIT,
     KOMGA,
     PandoraBox,
+    LongSticker,
     TelegraphHandler
 )
 from src import (
@@ -67,6 +68,11 @@ if __name__ == "__main__":
     neko_chan.add_handler(CommandHandler("start", Basic.introduce))
     neko_chan.add_handler(CommandHandler("help", Basic.instructions))
     # core function: parse information of messages you replied
+    long = LongSticker(proxy = proxy, cloudflare_worker_proxy = _cf_worker_proxy)
+    play_something_fault = CommandHandler(
+        command = "long",
+        callback = long.play_from_photo
+    )
     pandora = PandoraBox(proxy = proxy, cf_proxy = _cf_worker_proxy)
     parse = CommandHandler(
         command = ["hug", "cuddle", "kiss", "snog", "pet"],
@@ -78,6 +84,7 @@ if __name__ == "__main__":
         callback = pandora.anime_search,
         filters = filters.REPLY
     )
+    neko_chan.add_handler(play_something_fault)
     neko_chan.add_handler(parse)
     neko_chan.add_handler(anime_search)
 
@@ -85,7 +92,8 @@ if __name__ == "__main__":
         logger.info("[Main]: Master's user id not set, telegraph syncing service will not work.")
     else:
         # core function: sync Telegraph manga to local storage
-        telegraph = TelegraphHandler(proxy = proxy, telegram_user_id = _my_user_id)
+        telegraph = TelegraphHandler(
+            proxy = proxy, telegram_user_id = _my_user_id, cloudflare_worker_proxy = _cf_worker_proxy)
         telegraph_monitor = ConversationHandler(
             entry_points = [CommandHandler(command = "komga", callback = telegraph.komga_start)],
             states = {KOMGA: [MessageHandler(filters = filters.TEXT, callback = telegraph.add_task)]},
