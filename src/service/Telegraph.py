@@ -15,13 +15,13 @@ import httpx
 from bs4 import BeautifulSoup
 from ebooklib import epub
 from fake_useragent import UserAgent
-from httpx import URL, AsyncClient, Proxy, Response, HTTPStatusError
+from httpx import URL, AsyncClient, Proxy, Response
 
 from src.Environment import EnvironmentReader
 from src.utils.Logger import logger
 
 
-class FileIncompleteError(Exception):
+class BrokenFileException(Exception):
     def __init__(self, *args, **kwargs):
         pass
 
@@ -31,32 +31,36 @@ class Telegraph:
             self,
             telegraph_url: str,
             proxy: Optional[Proxy] = None,
-            cloudflare_worker_proxy: Optional[str] = None
+            cloudflare_workers_proxy: Optional[str] = None
     ):
-        self._url = f'{cloudflare_worker_proxy}/{telegraph_url}' if cloudflare_worker_proxy else telegraph_url
-        self._proxy = proxy
-        self._cf_proxy = cloudflare_worker_proxy
-        self._headers = {'User-Agent': UserAgent().random}
-        self._image_url_list = []
-        self._raw_title: Optional[str] = None
+        self._urls: List[str] = [
+            f'{cloudflare_workers_proxy}/{telegraph_url}' if cloudflare_workers_proxy else telegraph_url
+        ]
 
+        self._proxy: Optional[Proxy] = proxy
+        self._cf_proxy: Optional[str] = cloudflare_workers_proxy
+
+        self._headers: Dict[str, str] = {'User-Agent': UserAgent().random}
+
+        self._retry: int = 0  # counter to avoid infinite recursion
+        self._images: List[Optional[str]] = []  # image urls get from article
+        self._host: Optional[str] = None  # show in debug message
+
+        self._raw_title: Optional[str] = None
         self.title: Optional[str] = None
         self.artist: Optional[str] = None
-        self.thumbnail: Optional[str | URL] = None
+        self.thumbnail: Optional[str | URL] = None  # equals to self._images[0]
 
         env = EnvironmentReader()
         self._thread = env.get_variable("TELEGRAPH_THREADS")
 
         # declared in bot/Main.py
-        self.komga_dir = '/neko/komga'
-        self.epub_dir = '/neko/epub'
+        self._komga_dir = '/neko/komga'
+        self._epub_dir = '/neko/epub'
         self._tmp_dir = '/neko/.temp'
 
         # generated path
-        self.manga_path = self._tmp_dir
-        self._epub_file_path = self._tmp_dir
-        self._zip_file_path = self._tmp_dir
-        self._download_path = self._tmp_dir
+        self._file_dir = self._file_path = self._download_dir = self._tmp_dir
 
         # remove cache folders last longer than 1 day
         for root, dirs, _ in os.walk(self._tmp_dir):
@@ -65,44 +69,46 @@ class Telegraph:
                 modified_time = datetime.fromtimestamp(os.path.getmtime(path))
                 shutil.rmtree(path) if datetime.now() - modified_time > timedelta(days = 1) else None
 
-    async def _task_handler(self, timeout: int) -> int:
+    async def _task_handler(self, timeout: int) -> tuple[int, Optional[str]]:
         async def download_handler():
             async def worker(q: asyncio.Queue, client: AsyncClient):
                 while True:
                     i, u = await q.get()
-                    p = os.path.join(self._download_path, f"{i}.jpg")
-
                     if not u:
                         q.task_done()
                         break
 
+                    p = os.path.join(self._download_dir, f"{i}.jpg")
                     if os.path.exists(p) and os.path.getsize(p) != 0:
                         logger.debug(f"[Telegraph]: Skip existing image '{p}'")
                         q.task_done()
                         continue
 
-                    r = (await client.get(u, headers = self._headers, timeout = 5)).raise_for_status()
+                    try:
+                        r = (await client.get(u, headers = self._headers, timeout = timeout)).raise_for_status()
+                        if not r.content:
+                            raise BrokenFileException(
+                                f"Host '{self._host}' response with no content for image '{p}'")
+                    except (httpx.HTTPError, BrokenFileException) as _e1:
+                        logger.error(f"[Telegraph]: Failed to download image '{p}': {_e1}")
+                        q.task_done()
+                        continue
 
-                    if not r.headers.get('content-length'):
-                        raise FileIncompleteError(f"{service_host} refused to response.")
+                    try:
+                        async with aiofiles.open(p, 'wb') as f:
+                            await f.write(await r.aread())
+                        logger.debug(f"[Telegraph]: Image download complete for '{p}'")
+                    except Exception as _e2:
+                        logger.error(f"[Telegraph]: Failed to write image '{p}': {_e2}")
 
-                    async with aiofiles.open(p, 'wb') as f:
-                        await f.write(await r.aread())
-
-                    if os.path.getsize(p) != int(r.headers.get('Content-Length')):
-                        raise FileIncompleteError(f"Image '{p}' is broken.")
-
-                    logger.debug(f"[Telegraph]: Download complete for '{p}'.")
                     q.task_done()
 
-            # async parallel download
             download_queue = asyncio.Queue()
-            service_host = URL(self._image_url_list[0]).host
-            for num, url in enumerate(self._image_url_list):
+            for num, url in enumerate(self._images):
                 download_queue.put_nowait((num, url))
 
-            logger.debug(f"[Telegraph]: Queue Length: {len(self._image_url_list)}, "
-                         f"Image hosting service host: {service_host}")
+            logger.debug(f"[Telegraph]: Queue Length: {len(self._images)}, "
+                         f"Image hosting service host: {self._host}")
 
             async with httpx.AsyncClient(proxy = self._proxy) as c:
                 tasks = []
@@ -117,34 +123,39 @@ class Telegraph:
                 await asyncio.gather(*tasks)
 
         # execute script
-        if os.path.exists(self._zip_file_path):
-            logger.info(f"[Telegraph]: Existed ZIP at \"{self._zip_file_path}\"")
-            return 1
-        elif os.path.exists(self._epub_file_path):
-            logger.info(f"[Telegraph]: Existed EPUB at \"{self._epub_file_path}\"")
-            return 1
+        if os.path.exists(self._file_path):
+            logger.debug(f"[Telegraph]: Skip existed file at '{self._file_path}'")
+            return 1, None
 
-        os.makedirs(self._download_path, exist_ok = True)
+        os.makedirs(self._download_dir, exist_ok = True)
 
         try:
-            download_task = asyncio.create_task(download_handler())
-            await asyncio.wait_for(download_task, timeout = len(self._image_url_list) * timeout)
-        except asyncio.TimeoutError:
-            return 2
-        except FileIncompleteError:
-            return 3
-        except HTTPStatusError:
-            return 4
+            await download_handler()
+        except Exception as e:
+            return 2, str(e)
 
-        return 0
+        return 0, None
 
     async def _get_info_handler(self, is_zip = False, is_epub = False):
         async def regex(r: Response):
-            self._image_url_list = [
+            self._urls += [
                 f"{self._cf_proxy}/{full_url}" if self._cf_proxy else full_url
-                for i in re.findall(r'img src="(.*?)"', r.text)
+                for i in re.findall(r'a href="(.*?)"', r.text)
                 for full_url in [urljoin(str(r.url), i)]
+                if full_url.startswith("https://telegra.ph")
             ]
+
+            self._images = [
+                f"{self._cf_proxy}/{full_url}" if self._cf_proxy else full_url
+                for r_ex in (
+                    [r] if len(self._urls) == 1 else
+                    [await client.get(url) for url in self._urls[1:]]
+                )
+                for i in re.findall(r'img src="(.*?)"', r_ex.text)
+                for full_url in [urljoin(str(r_ex.url), i)]
+            ]
+
+            self._host = URL(self._images[0]).host
 
             self._raw_title = re.sub(
                 r'\*|\||\?|– Telegraph| |/|:',
@@ -152,47 +163,50 @@ class Telegraph:
                 BeautifulSoup(r.text, 'html.parser').find("title").text
             )
 
-            if len(self._image_url_list) == 0:
-                raise Exception(f"Images not found! [Source]: \"{self._url}\"")
+            if len(self._images) == 0:
+                raise Exception(f"Images not found! [Source]: \"{self._urls}\"")
 
-            self.thumbnail = self._image_url_list[0]
+            self.thumbnail = self._images[0]
 
             matched_title = next(
                 (re.search(pattern, self._raw_title)
                  for pattern in [r'](.*?\(.*?\))', r'](.*?)[(\[]', r"](.*)"]
                  if re.search(pattern, self._raw_title)), None
             )
-            self.title = matched_title.group(1) if matched_title else self._raw_title
 
-            matched_artist = re.search(r'\[(.*?)(?:\((.*?)\))?]', self._raw_title)
-            self.artist = matched_artist.group(2) or matched_artist.group(1) if matched_artist else "その他"
+            if not matched_title or matched_title.group(1) == '':
+                self.title = self._raw_title
+                self.artist = "その他"
+            else:
+                self.title = matched_title.group(1)
+                matched_artist = re.search(r'\[(.*?)(?:\((.*?)\))?]', self._raw_title)
+                self.artist = matched_artist.group(2) or matched_artist.group(1) if matched_artist else "その他"
 
             if is_epub:
-                self.manga_path = os.path.join(self.epub_dir, self.artist)
+                self._file_dir = os.path.join(self._epub_dir, self.artist)
             elif is_zip or re.search(r"Fanbox|FANBOX|FanBox|Pixiv|PIXIV", self.artist):
-                self.manga_path = os.path.join(self.komga_dir, self.artist)
+                self._file_dir = os.path.join(self._komga_dir, self.artist)
             else:
-                self.manga_path = os.path.join(self.komga_dir, self.title)
+                self._file_dir = os.path.join(self._komga_dir, self.title)
 
-            self._download_path = os.path.join(self._tmp_dir, self.title)
-            self._zip_file_path = os.path.join(self.manga_path, self.title + '.zip')
-            self._epub_file_path = os.path.join(self.manga_path, self.title + '.epub')
+            self._download_dir = os.path.join(self._tmp_dir, self.title)
+            self._file_path = os.path.join(self._file_dir, f"{self.title}.{'zip' if is_zip else 'epub'}")
 
         # execute script
         async with AsyncClient(timeout = 10, proxy = self._proxy) as client:
-            await regex((await client.get(url = self._url, headers = self._headers)).raise_for_status())
+            await regex((await client.get(url = self._urls[0], headers = self._headers)).raise_for_status())
 
     async def _process_handler(self, is_zip = False, is_epub = False) -> None:
         async def create_zip():
-            os.mkdir(self.manga_path) if not os.path.exists(self.manga_path) else None
+            os.mkdir(self._file_dir) if not os.path.exists(self._file_dir) else None
 
-            with ZipFile(os.path.join(self.manga_path, self.title) + '.zip', 'w', ZIP_DEFLATED) as f:
-                for root, _, files in os.walk(self._download_path):
+            with ZipFile(os.path.join(self._file_dir, self.title) + '.zip', 'w', ZIP_DEFLATED) as f:
+                for root, _, files in os.walk(self._download_dir):
                     for filename in files:
                         file_path = os.path.join(root, filename)
-                        f.write(file_path, os.path.relpath(file_path, self._download_path))
+                        f.write(file_path, os.path.relpath(file_path, self._download_dir))
 
-            logger.info(f"[Telegraph]: Create ZIP at '{self._zip_file_path}'")
+            logger.debug(f"[Telegraph]: Create ZIP file at '{self._file_path}'")
 
         async def create_epub():
             manga = epub.EpubBook()
@@ -201,19 +215,19 @@ class Telegraph:
             manga.set_language('zh') if re.search(r'翻訳|汉化|中國|翻译|中文|中国', self._raw_title) else None
 
             sorted_images = sorted(
-                [f for f in os.listdir(self._download_path) if
-                 os.path.isfile(os.path.join(self._download_path, f)) and str(f).endswith('.jpg')],
+                [f for f in os.listdir(self._download_dir) if
+                 os.path.isfile(os.path.join(self._download_dir, f)) and str(f).endswith('.jpg')],
                 key = lambda x: int(re.search(r'\d+', x).group())
             )
 
-            async with aiofiles.open(os.path.join(self._download_path, sorted_images[0]), "rb") as f:
+            async with aiofiles.open(os.path.join(self._download_dir, sorted_images[0]), "rb") as f:
                 manga.set_cover("cover.jpg", await f.read())
 
             for i, path in enumerate(sorted_images):
                 html = epub.EpubHtml(title = f"Page {i + 1}", file_name = f"image_{i + 1}.xhtml",
                                      content = f"<html><body><img src='{path}'></body></html>".encode('utf8'))
 
-                async with aiofiles.open(os.path.join(self._download_path, path), "rb") as f:
+                async with aiofiles.open(os.path.join(self._download_dir, path), "rb") as f:
                     manga.add_item(epub.EpubImage(
                         uid = path, file_name = path, media_type = "image/jpeg", content = await f.read()))
 
@@ -224,52 +238,41 @@ class Telegraph:
             manga.add_item(epub.EpubNav())
             manga.add_item(epub.EpubNcx())
 
-            os.mkdir(self.manga_path) if not os.path.exists(self.manga_path) else None
-            os.chdir(self.manga_path)
+            os.mkdir(self._file_dir) if not os.path.exists(self._file_dir) else None
+            os.chdir(self._file_dir)
             epub.write_epub(f"{self.title}.epub", manga, {})
             os.chdir(os.getcwd())
-            logger.info(f"[Telegraph]: Create EPUB at '{self._epub_file_path}'")
+            logger.debug(f"[Telegraph]: Create EPUB file at '{self._file_path}'")
 
         # execute script
         await self._get_info_handler(is_zip = is_zip, is_epub = is_epub) if not self._raw_title else None
-        logger.info(f"[Telegraph]: Create task for '{self._raw_title}'")
+        logger.info(f"[Telegraph]: Get task '{self._raw_title}' from '{self._urls[0]}'")
 
-        return_value = await self._task_handler(timeout = 3)
+        return_value, exc = await self._task_handler(timeout = 3)
         if return_value == 1:
             return
         if return_value == 2:
-            if len(os.listdir(self._download_path)) == 0:
-                logger.error(f"[Telegraph]: Timeout waiting for download. "
-                             f"Location: '{self._download_path}', Url: '{self._url}'")
-                raise
+            if self._retry == 2:
+                logger.error(f"[Telegraph]: {exc}")
+                return
 
-            logger.warning(f"[Telegraph]: Timeout waiting for download. Retrying...")
-
-            if await self._task_handler(timeout = 10) == 2:
-                logger.error(f"[Telegraph]: Retried for '{self._url}' failed. Location: '{self._download_path}'")
-                raise
-        if return_value == 3:
-            if await self._task_handler(timeout = 10) == 3:
-                logger.error(f"[Telegraph]: Downloaded with broken images."
-                             f"Location: '{self._download_path}', Url: '{self._url}'")
-                raise
-
-        if return_value == 4:
-            logger.error(f"[Telegraph]: Server response error."
-                         f"Location: '{self._download_path}', Url: '{self._url}'")
-            raise
+            self._retry += 1
+            logger.warning(f"[Telegraph]: {exc}")
+            await self._process_handler(is_zip, is_epub)
 
         await create_zip() if is_zip else await create_epub()
 
     async def get_epub(self) -> str:
         """Pack manga to epub format and return file path"""
         await self._process_handler(is_epub = True)
-        return self._epub_file_path
+        logger.info(f"[Telegraph]: Task '{self._raw_title}' finished")
+        return self._file_path
 
     async def get_zip(self) -> str:
         """Pack manga to zip format"""
         await self._process_handler(is_zip = True)
-        return self._zip_file_path
+        logger.info(f"[Telegraph]: Task '{self._raw_title}' finished")
+        return self._file_path
 
     async def get_info(self):
         """Gey basic info from Telegraph link"""
