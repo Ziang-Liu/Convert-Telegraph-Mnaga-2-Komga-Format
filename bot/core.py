@@ -144,37 +144,35 @@ class PandoraBox:
         if link_preview:
             if re.search(r'booru|x|twitter|pixiv|ascii2d|saucenao', link_preview.url):
                 await update.message.reply_text("这...这不用来找我吧(")
-                return ConversationHandler.END
             elif re.search(r'telegra.ph', link_preview.url):
                 await send_epub(link_preview.url)
-                return ConversationHandler.END
             else:
                 await search_and_reply(link_preview.url)
-                return ConversationHandler.END
-
-        if filters.PHOTO.filter(update.message.reply_to_message):
-            photo_file = update.message.reply_to_message.photo[2]
-            file_link = (await context.bot.get_file(photo_file.file_id)).file_path
-            await search_and_reply(file_link)
             return ConversationHandler.END
 
-        if filters.Sticker.ALL.filter(update.message.reply_to_message):
+        reply_message = update.message.reply_to_message
+
+        if filters.PHOTO.filter(reply_message):
+            photo_file = reply_message.photo[2]
+            file_link = (await context.bot.get_file(photo_file.file_id)).file_path
+            await search_and_reply(file_link)
+
+        elif filters.Sticker.STATIC.filter(reply_message) or filters.ANIMATION.filter(reply_message):
             sticker_task = AggregationSearch(proxy = self._proxy, cf_proxy = self._cf_proxy)
             media = await sticker_task.get_media((await context.bot.get_file(attachment.file_id)).file_path)
 
-            if attachment.is_video:
-                await update.message.reply_document(media, filename = f"{attachment.file_unique_id}.webm")
-            else:
+            if filters.Sticker.STATIC.filter(reply_message):
                 await update.message.reply_photo(photo = media)
+            else:
+                await update.message.reply_document(media, filename = f"{attachment.file_unique_id}.webm")
 
-            return ConversationHandler.END
-
-        if filters.Document.IMAGE.filter(update.message.reply_to_message):
-            file_link = (await context.bot.get_file(attachment.thumbnail.file_id)).file_path
+        elif filters.Document.IMAGE.filter(reply_message):
+            file_link = (await context.bot.get_file(reply_message.document.thumbnail.file_id)).file_path
             await search_and_reply(file_link)
-            return ConversationHandler.END
 
-        await update.message.reply_text("Neko看了一眼并朝你抛出了一个异常")
+        else:
+            await update.message.reply_text("Neko看了一眼并朝你抛出了一个异常")
+
         return ConversationHandler.END
 
     async def anime_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
