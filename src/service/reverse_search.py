@@ -29,12 +29,11 @@ class AggregationSearch:
         self._ascii2d_bovw: List = []
 
         self.exception = []
-        self.media = b''
         self.ascii2d_result: Dict = {}
         self.iqdb_result: Dict = {}
         self.google_result: Dict = {}
 
-    async def get_media(self, url: str, cookies: Optional[str] = None):
+    async def get_media(self, url: str, cookies: Optional[str] = None) -> bytes:
         _url: URL = URL(url)
         _referer: str = f"{_url.scheme}://{_url.host}/"
         _default_headers: Dict = {"User-Agent": UserAgent().random}
@@ -45,41 +44,41 @@ class AggregationSearch:
                 proxies = self._proxy, follow_redirects = True
         ) as client:
             resp = await client.get(_url)
-            self.media = resp.raise_for_status().content
+            return resp.raise_for_status().content
 
-    async def _search_with_type(self, url: str, type: str):
+    async def _search_with_type(self, url: str, t: str):
         async with Network(proxies = self._proxy) as client:
-            await self.get_media(url)
+            media = await self.get_media(url)
 
-            if type == "ascii2d":
+            if t == "ascii2d":
                 base_url = f'{self._cf_proxy}/https://ascii2d.net' if self._cf_proxy else 'https://ascii2d.net'
                 ascii2d = Ascii2D(base_url = base_url, client = client)
                 ascii2d_bovw = Ascii2D(base_url = base_url, client = client, bovw = True)
 
-                resp, bovw_resp = await asyncio.gather(ascii2d.search(file = self.media),
-                                                       ascii2d_bovw.search(file = self.media))
+                resp, bovw_resp = await asyncio.gather(ascii2d.search(file = media),
+                                                       ascii2d_bovw.search(file = media))
                 if not resp.raw and not bovw_resp.raw:
                     raise Exception(f"No ascii2d search results, search url: {resp.url}")
 
                 await asyncio.gather(self._format_ascii2d_result(bovw_resp, bovw = True),
                                      self._format_ascii2d_result(resp))
 
-            if type == "iqdb":
+            if t == "iqdb":
                 base_url = f'{self._cf_proxy}/https://iqdb.org' if self._cf_proxy else 'https://iqdb.org'
                 base_url_3d = f'{self._cf_proxy}/https://3d.iqdb.org' if self._cf_proxy else 'https://3d.iqdb.org'
                 iqdb = Iqdb(base_url = base_url, base_url_3d = base_url_3d, client = client)
 
-                resp = await iqdb.search(file = self.media)
+                resp = await iqdb.search(file = media)
                 if not resp.raw:
                     raise Exception(f"No iqdb search results, search url: {resp.url}")
 
                 await self._format_iqdb_result(resp)
 
-            if type == "google":
+            if t == "google":
                 base_url = f'{self._cf_proxy}/https://www.google.com' if self._cf_proxy else 'https://www.google.com'
                 google = Google(base_url = base_url, client = client)
 
-                resp = await google.search(file = self.media)
+                resp = await google.search(file = media)
                 if not resp.raw:
                     raise Exception(f"No google search results, search url: {resp.url}")
 

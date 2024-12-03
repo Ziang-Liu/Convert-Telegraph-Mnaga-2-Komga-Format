@@ -13,6 +13,6 @@ RUN apk add --no-cache --virtual .build-deps gcc musl-dev libffi-dev \
     && pip install --no-cache-dir -r requirements.txt \
     && apk del --purge .build-deps
 
-VOLUME ["/neko", "/logs"]
+VOLUME /neko
 
-CMD ["python3", "/app/bot/Main.py"]
+CMD ["python3", "/app/bot/main.py"]

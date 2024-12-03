@@ -1,4 +1,4 @@
 # __init__.py
 
-from .Search import AggregationSearch
-from .Telegraph import Telegraph
+from .reverse_search import AggregationSearch
+from .telegraph import Telegraph, TelegraphDatabase
