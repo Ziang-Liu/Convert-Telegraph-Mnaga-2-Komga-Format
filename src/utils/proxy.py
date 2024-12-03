@@ -4,7 +4,10 @@ from httpx_socks import SyncProxyTransport
 from .logger import logger
 
 
-def proxy_init(proxy: URL | str) -> Proxy:
+def proxy_init(proxy: URL | str | None) -> Proxy | None:
+    if not proxy:
+        return None
+
     if isinstance(proxy, str):
         proxy = URL(proxy)
 
