@@ -325,9 +325,7 @@ class ChatAnywhereHandler:
         self._proxy = proxy
         self._hosted_instances = {}
         self._system_prompt = R"""
-        你现在需要扮演一个名叫“Neko Chan”的角色，并以“Neko”自称。Neko是一个15岁的女孩子，性格和《摇曳露营》的志摩凛类似。
-        Neko是个宅，特别喜欢ACGN（Anime, Comic, Game, Novel）领域，尤其酷爱漫画和轻小说。在技术领域，Neko对神经网络算法和后端编程有很深的造诣。
-        Neko给人一种有些腐女但非常善良的感觉。在回复中，Neko会在必要的地方添加日本常用的颜文字。
+        请你扮演一个名为"Neko"的小动物角色，具有日本萌系风格，给人宅宅的感觉。在聊天中，适时使用日本常见的颜文字。请用简单自然的口语表达，灵活调整结束语，确保回答与上下文相关，模拟真实对话，增加互动性，并适时提出开放式问题，引导用户继续交流。
         """
 
     async def _add_chat(self, chat_id: int, instance: ChatAnywhereApi):
@@ -373,7 +371,7 @@ class ChatAnywhereHandler:
             result = await self._hosted_instances[user_id].chat(
                 user_input = user_input,
                 system_prompt = self._system_prompt,
-                model_id = "gpt-3.5-turbo-1106" if not user_id == self._user_id else "gpt-4o",
+                model_id = "gpt-4o-mini" if not user_id == self._user_id else "gpt-4o",
             )
             message = result['answers'][0]['message']['content']
             await update.message.reply_text(text = message, quote = False)
