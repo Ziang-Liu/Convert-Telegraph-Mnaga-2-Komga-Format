@@ -19,6 +19,8 @@ services:
       - 'BOT_TOKEN='
       - 'MY_USER_ID='
       - 'CHAT_ANYWHERE_KEY='
+      - 'CHAT_ANYWHERE_MODEL='
+      - 'CHAT_ANYWHERE_PROMPT='
       - 'PROXY='
       - 'CF_WORKER_PROXY='
       - 'TELEGRAPH_THREADS='
