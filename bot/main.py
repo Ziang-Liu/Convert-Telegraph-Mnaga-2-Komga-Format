@@ -11,7 +11,8 @@ from telegram.ext import (
 )
 
 from bot import (
-    Basic,
+    introduce,
+    instructions,
     ChatAnywhereHandler,
     GPT_OK,
     GPT_INIT,
@@ -20,15 +21,12 @@ from bot import (
     LongSticker,
     TelegraphHandler
 )
-from src import (
-    EnvironmentReader,
-    logger,
-    proxy_init
-)
+from src.utils import EnvironmentReader, logger, proxy_init
 
 if __name__ == "__main__":
     async def error_handler(_, context: ContextTypes.DEFAULT_TYPE):
         logger.error(context.error)
+
 
     # this project's working dirs are all declared here
     working_dirs = ['/neko/komga', '/neko/dmzj', '/neko/epub', '/neko/.temp']
@@ -43,9 +41,9 @@ if __name__ == "__main__":
     # Telegram basic params
     _bot_token = _env.get_variable("BOT_TOKEN")
     _my_user_id = _env.get_variable("MY_USER_ID")
-    # ChatAnywhere api token
+    # ChatAnywhere network_api token
     _chat_anywhere_key = _env.get_variable("CHAT_ANYWHERE_KEY")
-    # Telegram bot api url
+    # Telegram bot network_api url
     _base_url = 'https://api.telegram.org/bot'
     _base_file_url = 'https://api.telegram.org/file/bot'
     base_url = f'{_cf_worker_proxy}/{_base_url}' if _cf_worker_proxy else _base_url
@@ -65,8 +63,8 @@ if __name__ == "__main__":
     )
 
     # static reply with basic command
-    neko_chan.add_handler(CommandHandler("start", Basic.introduce))
-    neko_chan.add_handler(CommandHandler("help", Basic.instructions))
+    neko_chan.add_handler(CommandHandler("start", introduce))
+    neko_chan.add_handler(CommandHandler("help", instructions))
     # core function: parse information of messages you replied
     long = LongSticker(proxy = proxy, cloudflare_worker_proxy = _cf_worker_proxy)
     play_something_fault = CommandHandler(
@@ -102,7 +100,7 @@ if __name__ == "__main__":
         )
         neko_chan.add_handler(telegraph_monitor)
 
-    # core function: use ChatAnywhere api to use chatgpt
+    # core function: use ChatAnywhere network_api to use chatgpt
     chat_anywhere = ChatAnywhereHandler(
         proxy = proxy,
         user_id = int(_my_user_id),

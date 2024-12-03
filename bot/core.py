@@ -19,13 +19,9 @@ from telegram.ext import (
 )
 from urlextract import URLExtract
 
-from src import (
-    AggregationSearch,
-    ChatAnywhereApi,
-    logger,
-    TraceMoeApi
-)
-from src.service import Telegraph, TelegraphDatabase
+from src.network_api import ChatAnywhereApi, TraceMoeApi
+from src.service import Telegraph, TelegraphDatabase, AggregationSearch
+from src.utils import logger
 
 (KOMGA, GPT_INIT, GPT_OK) = range(3)
 
