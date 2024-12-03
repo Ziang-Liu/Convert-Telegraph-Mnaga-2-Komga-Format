@@ -17,12 +17,12 @@ services:
       - 'PUID=1000'
       - 'PGID=1000'
       - 'BOT_TOKEN='
-      - 'CF_WORKER_PROXY='
       - 'MY_USER_ID='
+      - 'CHAT_ANYWHERE_KEY='
       - 'PROXY='
+      - 'CF_WORKER_PROXY='
       - 'TELEGRAPH_THREADS='
       - 'TZ=Asia/Shanghai'
 
     volumes:
       - /localhost/path/to/media:/neko
-      - /localhost/path/to/log:/logs
