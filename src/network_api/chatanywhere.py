@@ -1,19 +1,13 @@
 import json
 from typing import Optional, List, Dict
 
-from httpx import Proxy, URL, AsyncClient, HTTPStatusError, RequestError
+from httpx import Proxy, AsyncClient, HTTPStatusError, RequestError
 
 
 class ChatAnywhereApi:
-    def __init__(
-            self,
-            token: str | None = None,
-            proxy: Optional[URL] | Optional[Proxy] | Optional[str] = None,
-            cf_proxy: Optional[str] = None
-    ) -> None:
-
+    def __init__(self, token: str, proxy: Optional[Proxy] = None, cf_proxy: Optional[str] = None):
         if not token:
-            raise ValueError("No valid token provided.")
+            raise ValueError("未提供有效的 token")
 
         self._proxy = proxy
         self._token = token
@@ -22,11 +16,20 @@ class ChatAnywhereApi:
 
     async def _request(self, method: str, endpoint: str, payload: str = None, auth_type: int = 0) -> json:
         """
-        Make a request to the API
-        :param method: Can be either 'GET' or 'POST'
-        :param endpoint: Endpoint to call
-        :param payload: Payload to send
-        :param auth_type: Authentication type to use, 0 for 'Bearer Token', 1 for 'Token'
+        发送 HTTP 请求到 API
+
+        Args:
+            method: HTTP 方法，支持 'GET' 和 'POST'
+            endpoint: API 端点
+            payload: 请求负载（可选）
+            auth_type: 认证类型，0 为 'Bearer Token'，1 为 'Token'
+
+        Returns:
+            响应数据（JSON 格式）
+
+        Raises:
+            Exception: 如果请求失败
+            ValueError: 如果方法无效
         """
 
         async def _handle_request(request_func) -> json:
@@ -35,11 +38,11 @@ class ChatAnywhereApi:
                 response.raise_for_status()
                 return response.json()
             except HTTPStatusError as e:
-                raise Exception(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
+                raise Exception(f"HTTP 错误：{e.response.status_code} - {e.response.text}")
             except RequestError as e:
-                raise Exception(f"Request error occurred: (URL: {e.request.url}, Headers: {e.request.headers})")
+                raise Exception(f"请求错误：(URL: {e.request.url}, Headers: {e.request.headers})")
             except Exception as e:
-                raise Exception(f"An unexpected error occurred: {e}")
+                raise Exception(f"意外错误：{e}")
 
         headers = {
             'User-Agent': self._user_agent,
@@ -57,22 +60,23 @@ class ChatAnywhereApi:
             elif method == 'POST':
                 return await _handle_request(lambda: client.post(f"{self._base_url}/{endpoint}", content = payload))
             else:
-                raise ValueError("Invalid HTTP method")
+                raise ValueError("无效的 HTTP 方法")
 
     async def list_model(self) -> List[Dict]:
         return (await self._request('GET', 'v1/models'))['data']
 
-    async def chat(
-            self,
-            user_input: Optional[str] = None,
-            model_id: str = "gpt-3.5-turbo",
-            system_prompt: Optional[str] = None
-    ) -> dict:
-        if not user_input:
-            raise Exception("No user input provided.")
+    async def chat(self, user_input: str, system_prompt: str, model_id: str = "gpt-3.5-turbo") -> dict:
+        """
+        发送用户输入和系统提示到聊天模型，并返回模型的响应
 
-        system_prompt = "You are a helpful assistant." if not system_prompt else system_prompt
+        Args:
+            user_input (str): 用户输入的文本
+            system_prompt (str): 系统提示的文本，用于指导模型的响应
+            model_id (str): 使用的模型ID，默认为"gpt-3.5-turbo"
 
+        Returns:
+            包含模型响应的字典
+        """
         payload = json.dumps({
             "model": f"{model_id}",
             "messages": [

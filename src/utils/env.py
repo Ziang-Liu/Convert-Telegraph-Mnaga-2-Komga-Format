@@ -6,18 +6,18 @@ from .logger import logger
 class EnvironmentReader:
     def __init__(self):
         # see https://core.telegram.org/bots/api#authorizing-your-bot
-        self.BOT_TOKEN = os.getenv('BOT_TOKEN', "6707614408:AAHgM84j-lpvFr2wzDR-N42sdnEb4tsQrD0")
+        self.BOT_TOKEN = os.getenv('BOT_TOKEN', None)
         # you can get from this bot https://t.me/userinfobot
-        self.MY_USER_ID = int(os.getenv('MY_USER_ID', 5229239723))
+        self.MY_USER_ID = int(os.getenv('MY_USER_ID', -1))
         # see https://buyca.tech/ or https://api.chatanywhere.org/v1/oauth/free/render
-        self.CHAT_ANYWHERE_KEY = os.getenv('CHAT_ANYWHERE_KEY', "sk-hkVRljpAVZwXtnBodIDPlHSZsTvSoGHHpHEh1RBJaE68Stg6")
+        self.CHAT_ANYWHERE_KEY = os.getenv('CHAT_ANYWHERE_KEY', None)
         # see https://github.com/chatanywhere/GPT_API_free?tab=readme-ov-file#%E7%89%B9%E7%82%B9
         self.CHAT_ANYWHERE_MODEL = os.getenv('CHAT_ANYWHERE_MODEL', "gpt-4o-mini")
         self.CHAT_ANYWHERE_PROMPT = os.getenv(
             'CHAT_ANYWHERE_PROMPT',
             "请你扮演一个名为 Neko 的小动物角色，具有日本萌系风格，给人宅宅的感觉。"
             "在聊天中，适时使用日本常见的颜文字。"
-            "请用简单自然的口语表达，灵活调整结束语，确保回答与上下文相关，模拟真实对话，增加互动性，并适时提出开放式问题，引导用户继续交流。"
+            "请用简单自然的口语表达，灵活调整结束语，确保回答与上下文相关，模拟真实对话，增加互动性。"
         )
         # support format like 'http://[host]:[port]', 'socks5://[host]:[port]'
         self.PROXY = os.getenv('PROXY', None)
