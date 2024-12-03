@@ -18,13 +18,14 @@ from ebooklib import epub
 from fake_useragent import UserAgent
 from httpx import URL, AsyncClient, Proxy, Response
 
-from src.utils import EnvironmentReader, logger
+from src.utils import logger
 
 
 class Telegraph:
     def __init__(
             self,
             telegraph_url: str,
+            thread: int = 1,
             proxy: Optional[Proxy] = None,
             cloudflare_workers_proxy: Optional[str] = None
     ):
@@ -34,25 +35,21 @@ class Telegraph:
 
         self._proxy: Optional[Proxy] = proxy
         self._cf_proxy: Optional[str] = cloudflare_workers_proxy
+        self._thread = thread
 
         self._headers: Dict[str, str] = {'User-Agent': UserAgent().random}
         self._images: List[Optional[str]] = []  # image urls get from article
-        self._host: Optional[str] = None  # show in debug message
+        self._host: Optional[str] = None
 
         self._raw_title: Optional[str] = None
         self.title: Optional[str] = None
         self.artist: Optional[str] = None
         self.thumbnail: Optional[str | URL] = None  # equals to self._images[0]
 
-        env = EnvironmentReader()
-        self._thread = env.get_variable("TELEGRAPH_THREADS")
-
-        # declared in bot/main.py
+        # declared in src/utils/env.py
         self._komga_dir = '/neko/komga'
         self._epub_dir = '/neko/epub'
         self._tmp_dir = '/neko/.temp'
-
-        # generated path
         self._file_dir = self._file_path = self._download_dir = self._tmp_dir
 
         # remove cache folders last longer than 1 day
