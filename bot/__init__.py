@@ -1,5 +1,5 @@
 # __init__.py
 
-import StaticReply as Basic
-from CoreFunction import KOMGA, GPT_OK, GPT_INIT
-from CoreFunction import TelegraphHandler, PandoraBox, ChatAnywhereHandler, LongSticker
+from core import KOMGA, GPT_OK, GPT_INIT
+from core import TelegraphHandler, PandoraBox, ChatAnywhereHandler, LongSticker
+from help import introduce, instructions, handle_inline_button
