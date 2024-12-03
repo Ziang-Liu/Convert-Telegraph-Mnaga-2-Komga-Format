@@ -7,16 +7,8 @@ from PIL import Image
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 from httpx import Proxy
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
-)
-from telegram.ext import (
-    ConversationHandler,
-    ContextTypes,
-    filters
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ConversationHandler, ContextTypes, filters
 from urlextract import URLExtract
 
 from src.network_api import ChatAnywhereApi, TraceMoeApi
@@ -32,23 +24,32 @@ class LongSticker:
         self._cf_proxy = cloudflare_worker_proxy
         self._headers = {'User-Agent': UserAgent().random}
 
-    async def play_from_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def wan_xx_wan_de(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         async def composition(b: bytes) -> bytes:
             with Image.open("res/sticker/玩XX玩的.jpg") as background, \
                     Image.open(BytesIO(b)) as overlay:
+
                 ratio = overlay.size[0] / overlay.size[1]
 
                 if 0.66 <= ratio <= 1.5:
-                    overlay = overlay.resize((115, int(overlay.size[1] * 115 / overlay.size[0])),
-                                             resample = Image.Resampling.BICUBIC)
+                    overlay = overlay.resize(
+                        (115, int(overlay.size[1] * 115 / overlay.size[0])),
+                        resample = Image.Resampling.BICUBIC
+                    )
                     background.paste(overlay, (145, 370))
+
                 elif ratio > 1.5:
-                    overlay = overlay.resize((190, int(overlay.size[1] * 190 / overlay.size[0])),
-                                             resample = Image.Resampling.BICUBIC)
+                    overlay = overlay.resize(
+                        (190, int(overlay.size[1] * 190 / overlay.size[0])),
+                        resample = Image.Resampling.BICUBIC
+                    )
                     background.paste(overlay, (115, 410))
+
                 else:
-                    overlay = overlay.resize((60, int(overlay.size[1] * 60 / overlay.size[0])),
-                                             resample = Image.Resampling.BICUBIC)
+                    overlay = overlay.resize(
+                        (60, int(overlay.size[1] * 60 / overlay.size[0])),
+                        resample = Image.Resampling.BICUBIC
+                    )
                     background.paste(overlay, (180, 350))
 
                 image_bytes = BytesIO()
@@ -58,45 +59,42 @@ class LongSticker:
         media_task = AggregationSearch(proxy = self._proxy, cf_proxy = self._cf_proxy)
         file_id = None
 
-        if update.message.reply_to_message:
-            reply_message = update.message.reply_to_message
+        message = update.message.reply_to_message or update.message
 
-            if filters.PHOTO.filter(reply_message):
-                file_id = reply_message.photo[2].file_id
-            elif filters.Sticker.STATIC.filter(reply_message):
-                file_id = reply_message.sticker.file_id
-            elif filters.Document.IMAGE.filter(reply_message):
-                file_id = reply_message.document.file_id
-        else:
-            if filters.PHOTO.filter(update.message):
-                file_id = update.message.photo[2].file_id
-            elif filters.Sticker.STATIC.filter(update.message):
-                file_id = update.message.sticker.file_id
-            elif filters.Document.IMAGE.filter(update.message):
-                file_id = update.message.document.file_id
+        if filters.PHOTO.filter(message):
+            file_id = message.photo[2].file_id
+        elif filters.Sticker.STATIC.filter(message):
+            file_id = message.sticker.file_id
+        elif filters.Document.IMAGE.filter(message):
+            file_id = message.document.file_id
 
         if file_id:
             media = await media_task.get_media((await context.bot.get_file(file_id)).file_path)
             await update.message.reply_sticker(await composition(media))
         else:
-            await update.message.reply_text("Unsupported Input")
+            await update.message.reply_text("Neko看了一眼并朝你抛出了一个异常")
 
         return ConversationHandler.END
 
 
 class PandoraBox:
-    def __init__(self, proxy: Optional[Proxy] = None, cf_proxy: Optional[str] = None):
+    def __init__(self, proxy: Optional[Proxy] = None, cloudflare_worker_proxy: Optional[str] = None):
         self._proxy = proxy
-        self._cf_proxy = cf_proxy
+        self._cf_proxy = cloudflare_worker_proxy
         self._headers = {'User-Agent': UserAgent().random}
 
-    async def auto_parse_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def parse(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         async def send_epub(url):
             try:
-                telegraph_task = Telegraph(url, self._proxy, self._cf_proxy)
+                telegraph_task = Telegraph(url, 1, self._proxy, self._cf_proxy)
+                document = await telegraph_task.get_epub()
+
                 await update.message.reply_document(
-                    document = await telegraph_task.get_epub(),
-                    connect_timeout = 30., write_timeout = 30., pool_timeout = 30., read_timeout = 30.
+                    document = document,
+                    connect_timeout = 30.,
+                    write_timeout = 30.,
+                    pool_timeout = 30.,
+                    read_timeout = 30.
                 )
             except Exception as exc:
                 await update.message.reply_text(text = f"出错了: {exc}")
@@ -115,32 +113,29 @@ class PandoraBox:
                 return ConversationHandler.END
 
             for result in search_result:
+                message, buttons = None, None
+
                 if result["class"] == "iqdb":
-                    search_reply_message = f"[🖼️]({result['url']}) Iqdb Search [😼]({result['thumbnail']})"
-                    search_reply_integrated_buttons = [
-                        [InlineKeyboardButton(
-                            f"{result['source']}: {result['similarity']}% Match",
-                            url = result['url'])]
-                    ]
-                    await update.message.reply_markdown(
-                        search_reply_message, reply_markup = InlineKeyboardMarkup(search_reply_integrated_buttons)
-                    )
+                    message = f"[🖼️]({result['url']}) _Iqdb 搜索结果_ [😼]({result['thumbnail']})"
+                    buttons = [[InlineKeyboardButton(
+                        f"{result['source']}: {result['similarity']}% Match",
+                        url = result['url']
+                    )]]
 
                 elif result["class"] == "ascii2d":
-                    search_reply_message = f"[🖼️]({result['url']}) Ascii2d Search [😼]({result['thumbnail']})"
-                    search_reply_integrated_buttons = [
-                        [InlineKeyboardButton("Original", url = result['url'])],
-                        [InlineKeyboardButton(f"{result['author']}", url = result['author_url'])]
+                    message = f"[🖼️]({result['url']}) _Ascii2d 搜索结果_ [😼]({result['thumbnail']})"
+                    buttons = [
+                        [InlineKeyboardButton("原始地址", url = result['url'])],
+                        [InlineKeyboardButton(result['author'], url = result['author_url'])]
                     ]
-                    await update.message.reply_markdown(
-                        search_reply_message, reply_markup = InlineKeyboardMarkup(search_reply_integrated_buttons)
-                    )
+
                 elif result["class"] == "google":
-                    search_reply_message = f"[🖼️]({result['url']}) Google Search [😼]({result['thumbnail']})"
-                    search_reply_integrated_buttons = [[InlineKeyboardButton("Original", url = result['url'])]]
-                    await update.message.reply_markdown(
-                        search_reply_message, reply_markup = InlineKeyboardMarkup(search_reply_integrated_buttons)
-                    )
+                    message = f"[🖼️]({result['url']}) _Google Lens 搜索结果_ [😼]({result['thumbnail']})"
+                    buttons = [[InlineKeyboardButton("原始地址", url = result['url'])]]
+
+                await update.message.reply_markdown(
+                    message, reply_markup = InlineKeyboardMarkup(buttons)
+                )
 
         # start from here
         link_preview = update.message.reply_to_message.link_preview_options
@@ -148,7 +143,7 @@ class PandoraBox:
 
         if link_preview:
             if re.search(r'booru|x|twitter|pixiv|ascii2d|saucenao', link_preview.url):
-                await update.message.reply_text("这...这不用来找我吧()")
+                await update.message.reply_text("这...这不用来找我吧(")
                 return ConversationHandler.END
             elif re.search(r'telegra.ph', link_preview.url):
                 await send_epub(link_preview.url)
@@ -166,8 +161,12 @@ class PandoraBox:
         if filters.Sticker.ALL.filter(update.message.reply_to_message):
             sticker_task = AggregationSearch(proxy = self._proxy, cf_proxy = self._cf_proxy)
             media = await sticker_task.get_media((await context.bot.get_file(attachment.file_id)).file_path)
-            await update.message.reply_document(media, filename = f"{attachment.file_unique_id}.webm") \
-                if attachment.is_video else await update.message.reply_photo(photo = media)
+
+            if attachment.is_video:
+                await update.message.reply_document(media, filename = f"{attachment.file_unique_id}.webm")
+            else:
+                await update.message.reply_photo(photo = media)
+
             return ConversationHandler.END
 
         if filters.Document.IMAGE.filter(update.message.reply_to_message):
@@ -175,7 +174,7 @@ class PandoraBox:
             await search_and_reply(file_link)
             return ConversationHandler.END
 
-        await update.message.reply_text("Unsupported type()")
+        await update.message.reply_text("Neko看了一眼并朝你抛出了一个异常")
         return ConversationHandler.END
 
     async def anime_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -183,27 +182,30 @@ class PandoraBox:
             def format_time(seconds):
                 return f"{int(seconds) // 60}m {int(seconds) % 60}s"
 
-            result = (await TraceMoeApi(proxy = self._proxy, cf_proxy = self._cf_proxy).search_by_url(url))[0]
-            if not result['similarity'] <= 90.:
+            result = (await TraceMoeApi(self._proxy, self._cf_proxy).search_by_url_with_cut_boarder(url))[0]
+
+            if result['similarity'] <= 0.9:
                 await update.message.reply_text("没有发现搜索结果 XwX")
                 return ConversationHandler.END
 
-            url = f"https://anilist.co/anime/{result['anilist']}"
-            button = [
-                [InlineKeyboardButton("AniList", url = url)],
-                [InlineKeyboardButton("Image Preview", url = result['image'])],
-                [InlineKeyboardButton("Video Preview", url = result['video'])],
+            anime_url = f"https://anilist.co/anime/{result['anilist']}"
+            buttons = [
+                [InlineKeyboardButton("AniList 详情页", url = anime_url)],
+                [InlineKeyboardButton("图片预览", url = result['image'])],
+                [InlineKeyboardButton("视频切片预览", url = result['video'])],
             ]
-            reply = (
-                f"[🔎]({url}) 搜索结果:\n"
-                f"时间线: `{format_time(float(result['from']))}` - "
-                f"`{format_time(float(result['to']))}`\n"
-                f"剧集: `{result['episode']}`"
-            )
-            await update.message.reply_markdown(reply, reply_markup = InlineKeyboardMarkup(button))
 
-        # start from here
+            reply = (
+                f"[🔎]({anime_url}) _搜索结果_\n\n"
+                f"空降第 {result['episode']} 集 "
+                f"{format_time(float(result['from']))} - {format_time(float(result['to']))}"
+            )
+
+            await update.message.reply_markdown(reply, reply_markup = InlineKeyboardMarkup(buttons))
+
+        # Start from here
         link_preview = update.message.reply_to_message.link_preview_options
+
         if link_preview:
             await search_and_reply(link_preview.url)
 
@@ -217,23 +219,26 @@ class PandoraBox:
             await search_and_reply((await context.bot.get_file(attachment.thumbnail.file_id)).file_path)
             return ConversationHandler.END
 
-        await update.message.reply_text("Unsupported type()")
+        await update.message.reply_text("Neko看了一眼并朝你抛出了一个异常")
         return ConversationHandler.END
 
 
 class TelegraphHandler:
     def __init__(
             self,
+            user_id: int = -1,
+            thread: int = 1,
             proxy: Optional[Proxy] = None,
-            cloudflare_worker_proxy: Optional[str] = None,
-            telegram_user_id: int = -1
+            cloudflare_worker_proxy: Optional[str] = None
     ):
+        self._thread = thread
         self._proxy = proxy
         self._cf_proxy = cloudflare_worker_proxy
-        self._user_id = telegram_user_id
+        self._user_id = user_id
         self._tasks = asyncio.Queue()
 
-        asyncio.get_event_loop().create_task(self._main_loop()) if telegram_user_id != -1 else None
+        if user_id != -1:
+            asyncio.get_event_loop().create_task(self._main_loop())
 
     async def _main_loop(self):
         async def worker(queue, n):
@@ -242,11 +247,13 @@ class TelegraphHandler:
             try:
                 await asyncio.gather(*tasks, return_exceptions = True)
             except Exception as e:
-                logger.error(f"[CoreFunction]: {e}")
+                logger.error(f"[Core]: {e}")
             finally:
-                [queue.task_done() for _ in tasks]
+                for _ in tasks:
+                    queue.task_done()
 
         idle_count = 0
+
         while True:
             await asyncio.sleep(10) if idle_count >= 20 else await asyncio.sleep(1)
 
@@ -263,18 +270,27 @@ class TelegraphHandler:
 
         msg = f"@{update.message.from_user.username}, 把 telegraph 链接端上来罢 ฅ(＾・ω・＾ฅ)"
         await update.message.reply_text(text = msg)
+
         return KOMGA
 
     async def add_task(self, update: Update, _):
         if update.message.from_user.id != self._user_id:
             return KOMGA
 
-        urls = list(set(i for i in URLExtract().find_urls(update.message.text_html_urled) if "telegra.ph" in i))
-        if len(urls) != 1:
-            [await self._tasks.put(Telegraph(url, self._proxy, self._cf_proxy).get_zip()) for url in urls]
+        urls = list(set(
+            i for i in URLExtract().find_urls(update.message.text_html_urled)
+            if "telegra.ph" in i
+        ))
 
-            logger.warning("[CoreFunction]: Multiple urls detected, database won't be updated."
-                           f"Source:\n{update.message.text_html_urled}")
+        if len(urls) != 1:
+            for u in urls:
+                await self._tasks.put(Telegraph(u, self._thread, self._proxy, self._cf_proxy).get_zip())
+
+            logger.warning(
+                "[CoreFunction]: Multiple urls detected, database won't be updated."
+                f" Source:\n{update.message.text_html_urled}"
+            )
+
             return KOMGA
 
         soup = BeautifulSoup(update.message.text_html_urled, "html.parser")
@@ -301,37 +317,56 @@ class TelegraphHandler:
                 matches[key] = value
 
         cvt_dict = {
-            "语言": 'language', "原作": 'original', "角色": 'characters', "艺术家": 'artist',
-            "团队": 'team', "混合": 'others', "女性": 'female', "男性": 'male',
-            "预览": 'preview_url', "原始地址": 'original_url', "其他": "others"
+            "语言": 'language',
+            "原作": 'original',
+            "角色": 'characters',
+            "艺术家": 'artist',
+            "团队": 'team',
+            "混合": 'others',
+            "女性": 'female',
+            "男性": 'male',
+            "预览": 'preview_url',
+            "原始地址": 'original_url',
+            "其他": "others"
         }
 
         db_dict = {}
         for k, v in matches.items():
             new_key = cvt_dict.get(k, k)
+
             if isinstance(v, List):
                 db_dict.setdefault(new_key, []).extend(v)
             else:
                 db_dict[new_key] = db_dict.setdefault(new_key, v)
 
         d_task = TelegraphDatabase()
-        await self._tasks.put(d_task.insert(d_task.new(db_dict), Telegraph(urls[0], self._proxy, self._cf_proxy)))
+        await self._tasks.put(
+            d_task.insert(d_task.new(db_dict), Telegraph(urls[0], self._thread, self._proxy, self._cf_proxy))
+        )
 
 
 class ChatAnywhereHandler:
-    def __init__(self, proxy: Optional[Proxy] = None, user_id: int = -1, key: str | None = None) -> None:
+    def __init__(
+            self,
+            user_id: int = -1,
+            key: str | None = None,
+            model: str = "gpt-3.5-turbo",
+            prompt: str = "You are a helpful assistant.",
+            proxy: Optional[Proxy] = None,
+            cloudflare_worker_proxy: Optional[str] = None,
+    ):
         self._key = key
+        self._model = model
+        self._prompt = prompt
         self._user_id = user_id
         self._proxy = proxy
+        self._cf_proxy = cloudflare_worker_proxy
         self._hosted_instances = {}
-        self._system_prompt = R"""
-        请你扮演一个名为"Neko"的小动物角色，具有日本萌系风格，给人宅宅的感觉。在聊天中，适时使用日本常见的颜文字。请用简单自然的口语表达，灵活调整结束语，确保回答与上下文相关，模拟真实对话，增加互动性，并适时提出开放式问题，引导用户继续交流。
-        """
 
-    async def _add_chat(self, chat_id: int, instance: ChatAnywhereApi):
+    async def _add_instance(self, chat_id: int, instance: ChatAnywhereApi):
         self._hosted_instances[chat_id] = instance
 
-    async def key_init(self, update: Update, _):
+    async def new(self, update: Update, _):
         if update.message.chat.type in ['group', 'supergroup', 'channel']:
             await update.message.reply_text(text = "Neko 并不能在群组或频道内打开这个功能 XwX")
             return ConversationHandler.END
@@ -342,7 +377,10 @@ class ChatAnywhereHandler:
             return GPT_INIT
 
         if update.message.from_user.id == self._user_id:
-            await self._add_chat(update.message.from_user.id, ChatAnywhereApi(token = self._key, proxy = self._proxy))
+            await self._add_instance(
+                update.message.from_user.id,
+                ChatAnywhereApi(token = self._key, proxy = self._proxy)
+            )
             await update.message.reply_text("准备OK c:")
             return GPT_OK
 
@@ -350,8 +388,9 @@ class ChatAnywhereHandler:
         chat_id = update.message.chat_id
         message_id = update.message.message_id
         user_id = update.message.from_user.id
+
         await context.bot.delete_message(chat_id, message_id)
-        await self._add_chat(user_id, ChatAnywhereApi(token = update.message.text, proxy = self._proxy))
+        await self._add_instance(user_id, ChatAnywhereApi(token = update.message.text, proxy = self._proxy))
 
         try:
             await self._hosted_instances[user_id].list_model()
@@ -370,8 +409,8 @@ class ChatAnywhereHandler:
         try:
             result = await self._hosted_instances[user_id].chat(
                 user_input = user_input,
-                system_prompt = self._system_prompt,
-                model_id = "gpt-4o-mini" if not user_id == self._user_id else "gpt-4o",
+                system_prompt = self._prompt,
+                model_id = self._model,
             )
             message = result['answers'][0]['message']['content']
             await update.message.reply_text(text = message, quote = False)
@@ -379,7 +418,7 @@ class ChatAnywhereHandler:
             logger.error(f'[Chat Mode]: {exc}')
             await update.message.reply_text(str(exc))
 
-    async def finish_chat(self, update: Update, _):
+    async def bye(self, update: Update, _):
         self._hosted_instances.pop(update.message.from_user.id)
         await update.message.reply_text("拜拜啦～")
         return ConversationHandler.END
