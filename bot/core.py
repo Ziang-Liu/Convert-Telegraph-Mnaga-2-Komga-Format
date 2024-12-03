@@ -180,9 +180,9 @@ class PandoraBox:
             def format_time(seconds):
                 return f"{int(seconds) // 60}m {int(seconds) % 60}s"
 
-            result = (await TraceMoeApi(self._proxy, self._cf_proxy).search_by_url_with_cut_boarder(url))[0]
+            result = (await TraceMoeApi(self._proxy, self._cf_proxy).search(url, 'cut_boarder'))[0]
 
-            if result['similarity'] <= 0.9:
+            if result['similarity'] <= 0.8:
                 await update.message.reply_text("没有发现搜索结果 XwX")
                 return ConversationHandler.END
 
@@ -405,11 +405,7 @@ class ChatAnywhereHandler:
         user_id = update.message.from_user.id
 
         try:
-            result = await self._hosted_instances[user_id].chat(
-                user_input = user_input,
-                system_prompt = self._prompt,
-                model_id = self._model,
-            )
+            result = await self._hosted_instances[user_id].chat(user_input, self._prompt, self._model)
             message = result['answers'][0]['message']['content']
             await update.message.reply_text(text = message, quote = False)
         except Exception as exc:
