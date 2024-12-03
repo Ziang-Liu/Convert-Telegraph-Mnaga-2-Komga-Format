@@ -31,6 +31,7 @@ if __name__ == "__main__":
     # this project's working dirs are all declared here
     working_dirs = ['/neko/komga', '/neko/dmzj', '/neko/epub', '/neko/.temp']
     [os.makedirs(name = working_dir, exist_ok = True, mode = 0o777) for working_dir in working_dirs]
+    os.chdir(os.path.dirname(os.path.realpath(__file__)))
 
     # get compose Environments
     _env = EnvironmentReader()
