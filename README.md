@@ -8,12 +8,11 @@ Neko is a self-hosted Telegram bot designed with many useful functions c:, espec
 
 - [x] Download stickers
 - [x] Upload manga as EPUB from Telegraph
-- [x] Image search using Ascii2d and Iqdb
+- [x] Image search using ASCII2D and Iqdb
 - [x] Sync manga from Telegraph to server
 - [x] ChatGPT assistant support
 - [x] Anime timeline search by using stickers(GIF)
-- [ ] Dmzj manga update notifications
-- [ ] Convert manga from Dmzj links to Telegraph
+- [x] Generate "Long Sticker"
 - [ ] Convert manga from EX, EH, NH links to Telegraph
 
 ### Back-end
@@ -25,8 +24,8 @@ Neko is a self-hosted Telegram bot designed with many useful functions c:, espec
 - [x] Integrate [trace.moe](https://soruly.github.io/trace.moe-api/#/) API
 - [x] Integrate [ChatAnywhere](https://chatanywhere.apifox.cn/) v1 API
 - [x] HTTP(S) and socks5 proxies support
-- [x] CloudFlare Workers proxy support based on [Cloudflare-Workers-Proxy](https://github.com/ymyuuu/Cloudflare-Workers-Proxy)
-- [ ] Fully integrate Dmzj v3 and v4 APIs
+- [x] CloudFlare Workers proxy support based
+  on [Cloudflare-Workers-Proxy](https://github.com/ymyuuu/Cloudflare-Workers-Proxy)
 - [ ] Fetch manga from EX, EH, NH sources
 
 ## 🔧 Docker Deployment
