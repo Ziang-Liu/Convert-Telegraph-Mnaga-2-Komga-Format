@@ -257,10 +257,11 @@ class Telegraph:
             manga.add_item(epub.EpubNav())
             manga.add_item(epub.EpubNcx())
 
+            back = os.getcwd()
             os.mkdir(self._file_dir) if not os.path.exists(self._file_dir) else None
             os.chdir(self._file_dir)
             epub.write_epub(f"{self.title}.epub", manga, {})
-            os.chdir(os.getcwd())
+            os.chdir(back)
             logger.debug(f"[Telegraph]: Create EPUB file at '{self._file_path}'")
 
         async def fun_handler(func, *args):
