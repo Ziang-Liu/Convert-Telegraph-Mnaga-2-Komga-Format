@@ -100,42 +100,35 @@ class PandoraBox:
                 await update.message.reply_text(text = f"出错了: {exc}")
 
         async def search_and_reply(url):
-            search_task = AggregationSearch(proxy = self._proxy, cf_proxy = self._cf_proxy)
-            search_result = await search_task.aggregation_search(url)
+            results = await AggregationSearch(self._proxy, self._cf_proxy).aggregation_search(url)
+            m, b = "🔎 _搜索结果_ ", []
 
-            if search_task.exception and not search_result:
-                err_message = ''.join([f'{e}\n' for e in search_task.exception])
-                await update.message.reply_text(err_message)
+            if not results:
+                await update.message.reply_text("没有搜到结果 TwT")
                 return ConversationHandler.END
 
-            if not search_result:
-                await update.message.reply_text("No search results.")
-                return ConversationHandler.END
+            for i, r in enumerate(results):
+                def add_title_button(c: str):
+                    if r['title'] and len(r['title']) < 20:
+                        b.append([InlineKeyboardButton(r['title'], r['url'])])
+                    elif r['title'] and len(r['title']) >= 20:
+                        b.append([InlineKeyboardButton(f"{r['title'][:20]}...", r['url'])])
+                    else:
+                        b.append([InlineKeyboardButton(c, r['url'])])
 
-            for result in search_result:
-                message, buttons = None, None
+                m += f" [{i + 1}]({r['url']})"
+                if r["class"] == "iqdb":
+                    b.append([InlineKeyboardButton(r['source'], r['url'])])
+                elif r["class"] == "ascii2d":
+                    add_title_button("Ascii2D")
+                    if r['author'] and len(r['author']) < 20:
+                        b.append([InlineKeyboardButton(r['author'], url = r['author_url'])])
+                    elif r['author'] and len(r['author']) >= 20:
+                        b.append([InlineKeyboardButton(f"{r['author'][:20]}...", url = r['author_url'])])
+                elif r["class"] == "google":
+                    add_title_button("Google")
 
-                if result["class"] == "iqdb":
-                    message = f"[🖼️]({result['url']}) _Iqdb 搜索结果_ [😼]({result['thumbnail']})"
-                    buttons = [[InlineKeyboardButton(
-                        f"{result['source']}: {result['similarity']}% Match",
-                        url = result['url']
-                    )]]
-
-                elif result["class"] == "ascii2d":
-                    message = f"[🖼️]({result['url']}) _Ascii2d 搜索结果_ [😼]({result['thumbnail']})"
-                    buttons = [
-                        [InlineKeyboardButton("原始地址", url = result['url'])],
-                        [InlineKeyboardButton(result['author'], url = result['author_url'])]
-                    ]
-
-                elif result["class"] == "google":
-                    message = f"[🖼️]({result['url']}) _Google Lens 搜索结果_ [😼]({result['thumbnail']})"
-                    buttons = [[InlineKeyboardButton("原始地址", url = result['url'])]]
-
-                await update.message.reply_markdown(
-                    message, reply_markup = InlineKeyboardMarkup(buttons)
-                )
+            await update.message.reply_markdown(m, reply_markup = InlineKeyboardMarkup(b))
 
         # start from here
         link_preview = update.message.reply_to_message.link_preview_options
