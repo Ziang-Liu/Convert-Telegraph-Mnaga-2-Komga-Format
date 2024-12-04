@@ -8,42 +8,46 @@ neko is a self-hosted Telegram bot designed for acg lovers.
 
 ## 💡 Features
 
-<table style="width: 100%; table-layout: fixed;">
-  <tr>
+<div style="overflow-x: auto;">
+  <table style="width: 100%; table-layout: fixed;">
+    <tr>
       <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-      <h3>📺 Anime search</h3>
-      <img src="sample/anime_search.png" alt="Anime Search" style="width: auto; height: auto; max-height: 600px;">
-    </td>
-    <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-      <h3>💬 In-APP ChatGPT</h3>
-      <img src="sample/chat.png" alt="Chat Anywhere" style="width: auto; height: auto; max-height: 600px;">
-    </td>
-  </tr>
-  <tr>
-    <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-      <h3>😊 Get sticker & 🐉 "Long Sticker"</h3>
-      <img src="sample/sticker.png" alt="Stickers" style="width: auto; height: auto; max-height: 600px;">
-    </td>
-    <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-      <h3>🖼️ Image reverse search</h3>
-      <img src="sample/image_search.png" alt="Image Reverse Search" style="width: auto; height: auto; max-height: 600px;">
-    </td>
-  </tr>
-  <tr>
-    <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-      <h3>📖 Pack Telegraph to Epub</h3>
-      <img src="sample/upload_epub.png" alt="Upload EPUB" style="width: auto; height: auto; max-height: 600px;">
-    </td>
-  </tr>
-</table>
-<table>
-  <tr>
-    <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-      <h3>💾 Sync manga from Telegraph</h3>
-      <img src="sample/komga.png" alt="Sync Komga" style="width: auto; height: auto; max-height: 600px;">
-    </td>
-  </tr>
-</table>
+        <h3>📺 Anime search</h3>
+        <img src="sample/anime_search.png" alt="Anime Search" style="width: auto; height: auto; max-height: 600px;">
+      </td>
+      <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+        <h3>💬 In-APP ChatGPT</h3>
+        <img src="sample/chat.png" alt="Chat Anywhere" style="width: auto; height: auto; max-height: 600px;">
+      </td>
+    </tr>
+    <tr>
+      <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+        <h3>😊 Get sticker & 🐉 "Long Sticker"</h3>
+        <img src="sample/sticker.png" alt="Stickers" style="width: auto; height: auto; max-height: 600px;">
+      </td>
+      <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+        <h3>🖼️ Image reverse search</h3>
+        <img src="sample/image_search.png" alt="Image Reverse Search" style="width: auto; height: auto; max-height: 600px;">
+      </td>
+    </tr>
+    <tr>
+      <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+        <h3>📖 Pack Telegraph to Epub</h3>
+        <img src="sample/upload_epub.png" alt="Upload EPUB" style="width: auto; height: auto; max-height: 600px;">
+      </td>
+    </tr>
+  </table>
+</div>
+<div style="overflow-x: auto;">
+  <table>
+    <tr>
+      <td style="text-align: center; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+        <h3>💾 Sync manga from Telegraph</h3>
+        <img src="sample/komga.png" alt="Sync Komga" style="width: auto; height: auto; max-height: 600px;">
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## 🔧 Docker Deployment
 
