@@ -8,89 +8,23 @@ neko is a self-hosted Telegram bot designed for acg lovers.
 
 ## 💡 Features
 
-<style>
-.container {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-}
+<h3>📺 Anime search with timeline</h3>
+<img src="sample/anime_search.png" alt="Anime Search" height="500">
 
-.container img {
-  max-width: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-}
+<h3>💬 ChatAnywhere In-APP conversation</h3>
+<img src="sample/chat.png" alt="Chat Anywhere" height="500">
 
-.container h3 {
-  margin-bottom: 10px;
-  font-size: 18px;
-  font-weight: bold;
-  text-align: center;
-  max-width: 400px;
-}
+<h3>😊 Download static or animated stickers & 🐉 "Long Sticker"</h3>
+<img src="sample/sticker.png" alt="Stickers" height="500">
 
-.item {
-  flex: 0 0 48%;
-  margin-bottom: 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
+<h3>🖼️ Image reverse search</h3>
+<img src="sample/image_search.png" alt="Image Reverse Search" height="500">
 
-.item img {
-  margin-bottom: 10px;
-}
+<h3>📖 Upload manga as EPUB files from Telegraph</h3>
+<img src="sample/upload_epub.png" alt="Upload EPUB" height="500">
 
-@media (max-width: 768px) {
-  .item {
-    flex: 0 0 100%;
-  }
-  
-  .item img {
-    max-height: 80vh;
-  }
-}
-
-@media (max-width: 480px) {
-  .item img {
-    max-height: 100vh;
-  }
-}
-
-@media (min-width: 769px) {
-  .item img {
-    max-height: 70vh;
-  }
-}
-</style>
-
-<div class="container">
-  <div class="item">
-    <h3>📺 Anime search with timeline</h3>
-    <img src="sample/anime_search.png" alt="anime_search">
-  </div>
-  <div class="item">
-    <h3>💬 ChatAnywhere In-APP conversation</h3>
-    <img src="sample/chat.png" alt="chat">
-  </div>
-  <div class="item">
-    <h3>😊 Download static or animated stickers & 🐉 "Long Sticker"</h3>
-    <img src="sample/sticker.png" alt="sticker">
-  </div>
-  <div class="item">
-    <h3>🖼️ Image reverse search</h3>
-    <img src="sample/image_search.png" alt="image_search">
-  </div>
-  <div class="item">
-    <h3>📖 Upload manga as EPUB files from Telegraph</h3>
-    <img src="sample/upload_epub.png" alt="upload_epub">
-  </div>
-  <div class="item">
-    <h3>💾 Sync manga from Telegraph to self-hosted Komga server</h3>
-    <img src="sample/komga.png" alt="komga">
-  </div>
-</div>
+<h3>💾 Sync manga from Telegraph to self-hosted Komga server</h3>
+<img src="sample/komga.png" alt="Sync Komga" height="500">
 
 ## 🔧 Docker Deployment
 
