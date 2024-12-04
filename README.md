@@ -11,17 +11,17 @@ neko is a self-hosted Telegram bot designed for acg lovers.
 <table style="width: 100%; table-layout: fixed;">
   <tr>
       <td style="text-align: center; width: 50%;">
-      <h3>📺 Anime search with timeline</h3>
+      <h3>📺 Anime search</h3>
       <img src="sample/anime_search.png" alt="Anime Search" style="width: auto; height: auto; max-height: 600px;">
     </td>
     <td style="text-align: center; width: 50%;">
-      <h3>💬 In-APP GPT conversation</h3>
+      <h3>💬 In-APP ChatGPT</h3>
       <img src="sample/chat.png" alt="Chat Anywhere" style="width: auto; height: auto; max-height: 600px;">
     </td>
   </tr>
   <tr>
     <td style="text-align: center; width: 50%;">
-      <h3>😊 Download sticker & 🐉 "Long Sticker"</h3>
+      <h3>😊 Get sticker & 🐉 "Long Sticker"</h3>
       <img src="sample/sticker.png" alt="Stickers" style="width: auto; height: auto; max-height: 600px;">
     </td>
     <td style="text-align: center; width: 50%;">
@@ -31,7 +31,7 @@ neko is a self-hosted Telegram bot designed for acg lovers.
   </tr>
   <tr>
     <td style="text-align: center; width: 50%;">
-      <h3>📖 Upload manga as EPUB from Telegraph</h3>
+      <h3>📖 Pack Telegraph to Epub</h3>
       <img src="sample/upload_epub.png" alt="Upload EPUB" style="width: auto; height: auto; max-height: 600px;">
     </td>
   </tr>
@@ -39,7 +39,7 @@ neko is a self-hosted Telegram bot designed for acg lovers.
 <table>
   <tr>
     <td style="text-align: center; width: 50%;">
-      <h3>💾 Sync manga from Telegraph to self-hosted Komga server</h3>
+      <h3>💾 Sync manga from Telegraph</h3>
       <img src="sample/komga.png" alt="Sync Komga" style="width: auto; height: auto; max-height: 600px;">
     </td>
   </tr>
