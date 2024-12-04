@@ -9,22 +9,22 @@ neko is a self-hosted Telegram bot designed for acg lovers.
 ## 💡 Features
 
 <h3>📺 Anime search with timeline</h3>
-<img src="sample/anime_search.png" alt="Anime Search" height="500">
+<img src="sample/anime_search.png" alt="Anime Search" style="width: auto; height: auto; max-height: 700px;">
 
 <h3>💬 ChatAnywhere In-APP conversation</h3>
-<img src="sample/chat.png" alt="Chat Anywhere" height="500">
+<img src="sample/chat.png" alt="Chat Anywhere" style="width: auto; height: auto; max-height: 700px;">
 
 <h3>😊 Download static or animated stickers & 🐉 "Long Sticker"</h3>
-<img src="sample/sticker.png" alt="Stickers" height="500">
+<img src="sample/sticker.png" alt="Stickers" style="width: auto; height: auto; max-height: 700px;">
 
 <h3>🖼️ Image reverse search</h3>
-<img src="sample/image_search.png" alt="Image Reverse Search" height="500">
+<img src="sample/image_search.png" alt="Image Reverse Search" style="width: auto; height: auto; max-height: 700px;">
 
 <h3>📖 Upload manga as EPUB files from Telegraph</h3>
-<img src="sample/upload_epub.png" alt="Upload EPUB" height="500">
+<img src="sample/upload_epub.png" alt="Upload EPUB" style="width: auto; height: auto; max-height: 700px;">
 
 <h3>💾 Sync manga from Telegraph to self-hosted Komga server</h3>
-<img src="sample/komga.png" alt="Sync Komga" height="500">
+<img src="sample/komga.png" alt="Sync Komga" style="width: auto; height: auto; max-height: 700px;">
 
 ## 🔧 Docker Deployment
 
